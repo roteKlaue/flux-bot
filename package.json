@@ -4,7 +4,8 @@
   "version": "0.0.1",
   "main": "dist/index.js",
   "scripts": {
-    "prepublish": "npx tsc"
+    "prepublish": "npx tsc",
+    "version": "git add . && git commit -m 'Release v$npm_package_version' && git tag v$npm_package_version"
   },
   "keywords": [
     "discord"
