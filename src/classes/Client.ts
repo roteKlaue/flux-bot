@@ -12,6 +12,7 @@ type HarmonyClientOptions<T extends boolean = boolean> = ClientOptions & {
 
 /**
  * Custom Discord.js Client for handling commands and interactions.
+ * @template T - Indicates whether text commands are allowed.
  */
 export default class HarmonyClient<
     T extends boolean = boolean,
@@ -21,6 +22,10 @@ export default class HarmonyClient<
     public readonly commands = new Collection<string, Command<any>>();
     public readonly prefix: T extends true ? string : undefined;
 
+    /**
+     * Initializes the HarmonyClient instance.
+     * @param options - Options to configure the client, including whether text commands are allowed.
+     */
     public constructor(options: HarmonyClientOptions<T>) {
         super(options);
 
@@ -83,6 +88,10 @@ export default class HarmonyClient<
         const command = this.commands.get(commandName);
         if (!command) return;
 
+        if (command.private) {
+            message.delete();
+        }
+
         const interop = new Interop(message, command.private ?? false);
         const [resolvedArgs, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], message, interop, args));
 
@@ -94,6 +103,12 @@ export default class HarmonyClient<
         this.commandHandler(command, interop, resolvedArgs);
     }
 
+    /**
+     * Executes a command after validation and handling of permissions, cooldowns, and errors.
+     * @param command - The command to execute.
+     * @param interop - The interop object representing the interaction or message.
+     * @param args - The parsed arguments for the command.
+     */
     private async commandHandler<T extends CommandOption<OptionType>[]>(
         command: Command<T>,
         interop: Interop,
@@ -129,7 +144,8 @@ export default class HarmonyClient<
     }
 
     /**
-     * Dynamically load commands into the client.
+     * Dynamically loads commands into the client's command collection.
+     * @param commands - The commands to load.
      */
     public loadCommands(commands: Command<any>[]) {
         commands.forEach((command) => this.commands.set(command.name, command));

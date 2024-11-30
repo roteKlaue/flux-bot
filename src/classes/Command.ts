@@ -13,6 +13,10 @@ const typeToMethodMap: {
     VOICE_CHANNEL: (builder, setup) => builder.addChannelOption(setup),
 };
 
+/**
+ * Class representing a Discord command with both slash and text command capabilities.
+ * @template T - The type of the command's options.
+ */
 class Command<T extends CommandOption<OptionType>[] = []> {
     public readonly name: string;
     public readonly description: string;
@@ -24,6 +28,11 @@ class Command<T extends CommandOption<OptionType>[] = []> {
 
     public readonly execute: CommandExecutor<T>;
 
+    /**
+     * Initializes a new Command instance.
+     * @param props - The properties defining the command.
+     * @throws {Error} If the command name is invalid or any option has an invalid name or type.
+     */
     constructor(props: CommandProps<T>) {
         this.name = props.name.toLowerCase();
 
@@ -40,6 +49,12 @@ class Command<T extends CommandOption<OptionType>[] = []> {
         this.configureSlashCommand(props);
     }
 
+    /**
+     * Validates and normalizes the options for the command.
+     * @param options - The options to validate.
+     * @returns The validated and normalized options.
+     * @throws {Error} If any option has an invalid name.
+     */
     private validateOptions(options?: T): T {
         if (!options) return [] as unknown as T;
 
@@ -52,14 +67,24 @@ class Command<T extends CommandOption<OptionType>[] = []> {
         }) as T;
     }
 
-    private computePermissions(permissions?: PermissionResolvable[]): bigint | null {
-        if (!permissions || permissions.length === 0) return null;
+    /**
+     * Computes the permissions for the command as a single bitfield value.
+     * @param permissions - The list of permissions required for the command.
+     * @returns The computed bitfield value.
+     */
+    private computePermissions(permissions?: PermissionResolvable[]): bigint {
+        if (!permissions || permissions.length === 0) return BigInt(0);
 
         return permissions
             .map(p => BigInt(p as any))
             .reduce((acc, perm) => acc | perm, BigInt(0));
     }
 
+    /**
+     * Configures the SlashCommandBuilder for the command.
+     * @param props - The properties defining the command.
+     * @throws {Error} If a channel option is invalid in DM contexts.
+     */
     private configureSlashCommand(props: CommandProps<T>): void {
         this.slashCommandConfig
             .setName(this.name)
@@ -76,6 +101,12 @@ class Command<T extends CommandOption<OptionType>[] = []> {
         }
     }
 
+    /**
+     * Adds an option to the SlashCommandBuilder.
+     * @param option - The option to add.
+     * @param inDM - Whether the command is available in DMs.
+     * @throws {Error} If the option type is invalid or choices are misconfigured.
+     */
     private addOptionToBuilder(option: CommandOption<OptionType>, inDM: boolean): void {
         const method = typeToMethodMap[option.type];
         if (!method) {
@@ -109,6 +140,11 @@ class Command<T extends CommandOption<OptionType>[] = []> {
         });
     }
 
+    /**
+     * Type guard to determine if an option is a channel option.
+     * @param base - The base object to check.
+     * @returns True if the base is a channel option, false otherwise.
+     */
     private static isChannelCommandOption(base: any): base is SlashCommandChannelOption {
         return base instanceof SlashCommandChannelOption;
     }

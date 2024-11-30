@@ -5,10 +5,12 @@ import Interop from "./Interop";
 
 export default class OptionParser {
     /**
-     * Extracts arguments from an interaction's options.
-     * @param interaction - The interaction to extract arguments from.
-     * @param options - The command options to match against.
-     * @returns The extracted arguments.
+     * Extracts arguments from the options provided in a Discord command interaction.
+     * @template T - The type of the command options.
+     * @param interaction - The interaction from which to extract arguments.
+     * @param options - The command options describing the expected arguments.
+     * @param interop - An instance of the Interop class, used for resolving defaults or other shared functionality.
+     * @returns An array of extracted arguments mapped to the corresponding options.
      */
     private static extractArgsFromInteractionOptions<T extends CommandOption<OptionType>[]>(
         interaction: CommandInteraction,
@@ -46,11 +48,14 @@ export default class OptionParser {
     };
 
     /**
-     * Extracts arguments from a message's content.
-     * @param message - The message to extract arguments from.
-     * @param options - The command options to match against.
-     * @param args - The arguments from the message content.
-     * @returns The extracted arguments.
+     * Extracts arguments from a message's content based on the command's options.
+     * @template T - The type of the command options.
+     * @param message - The Discord message containing the command and its arguments.
+     * @param options - The command options describing the expected arguments.
+     * @param interop - An instance of the Interop class, used for resolving defaults or other shared functionality.
+     * @param args - The raw arguments extracted from the message content.
+     * @returns A promise that resolves to an array of extracted arguments.
+     * @throws An error if required arguments are missing or invalid values are provided.
      */
     private static async extractArgsFromMessage<T extends CommandOption<OptionType>[]>(
         message: Message,
@@ -131,11 +136,14 @@ export default class OptionParser {
     }
 
     /**
-     * Parses command options and resolves their values.
-     * @param options - The options for the command.
-     * @param args - The arguments provided (for messages).
-     * @param source - The interaction or message source.
-     * @returns The resolved arguments.
+     * Parses and resolves command options from either a message or an interaction.
+     * @template T - The type of the command options.
+     * @param options - The options defining the structure and types of arguments for the command.
+     * @param source - The source of the command, either a Discord interaction or message.
+     * @param interop - An instance of the Interop class, used for resolving defaults or other shared functionality.
+     * @param args - An optional array of arguments, used for message-based commands.
+     * @returns A promise resolving to the extracted arguments matching the command options.
+     * @throws An error if the source type is unsupported.
      */
     public static async parseOptions<T extends CommandOption<OptionType>[]>(
         options: T,
