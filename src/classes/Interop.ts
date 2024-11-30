@@ -36,7 +36,7 @@ export default class Interop<T extends boolean = boolean> extends EventEmitter i
      * @param base - The base CommandInteraction or Message.
      * @param isPrivate - Whether this is a private interaction.
      */
-    public constructor(private readonly base: CommandInteraction | Message<boolean>, private readonly isPrivate: T) {
+    public constructor(base: CommandInteraction | Message<boolean>, private readonly isPrivate: T) {
         super();
 
         if (!(base instanceof CommandInteraction || base instanceof Message)) {

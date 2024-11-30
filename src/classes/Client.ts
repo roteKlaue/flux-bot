@@ -1,5 +1,7 @@
 import { CommandOption, ExtractArgsFromOptions, OptionType } from "../types/CommandTypings";
 import { Client, ClientOptions, Collection, Interaction, Message } from "discord.js";
+import OptionParser from "./OptionParser";
+import { PromiseUtil } from "sussy-util";
 import Command from "./Command";
 import Interop from "./Interop";
 
@@ -12,14 +14,14 @@ type HarmonyClientOptions<T extends boolean = boolean> = ClientOptions & {
  * Custom Discord.js Client for handling commands and interactions.
  */
 export default class HarmonyClient<
-    T extends boolean = boolean, 
+    T extends boolean = boolean,
     Ready extends boolean = boolean
 > extends Client<Ready> {
     public readonly cooldowns = new Collection<string, Collection<string, number>>();
-    public readonly commands = new Collection<string, Command>();
+    public readonly commands = new Collection<string, Command<any>>();
     public readonly prefix: T extends true ? string : undefined;
 
-    private constructor(options: HarmonyClientOptions<T>) {
+    public constructor(options: HarmonyClientOptions<T>) {
         super(options);
 
         if (options.allow_text_commands) {
@@ -38,46 +40,32 @@ export default class HarmonyClient<
     private async handleInteraction(interaction: Interaction) {
         if (!interaction.isCommand()) return;
 
-        const command = this.commands.get(interaction.commandName);
-        if (!command) return;
+        const name = interaction.commandName;
+        const command = this.commands.get(name);
 
-        const interop = new Interop(interaction, false);
-        const args = this.resolveCommandArguments(command.options ?? [], interop);
-
-        try {
-            await command.execute(this, interop, args);
-        } catch (error) {
-            this.emit("commandError", {
-                commandName: command.name,
-                error,
-                context: { interaction },
-            });
+        if (!command) {
+            this.emit('commandNotFound', { interaction, name });
+            return;
         }
-    }
 
-    /**
-     * Resolves command arguments from the options.
-     * @param options - The options for the command.
-     * @param interop - The interaction or message handler.
-     * @returns The resolved arguments.
-     */
-    private resolveCommandArguments<T extends CommandOption<OptionType>[]>(
-        options: T,
-        interop: Interop
-    ): ExtractArgsFromOptions<T> {
-        const args: Record<string, any> = {};
-        options.forEach((option) => {
-            const value = interop.getOptionValue(option.name);
-            args[option.name] = value ?? option.defaultValue;
-        });
-        return args as ExtractArgsFromOptions<T>;
+        await interaction.deferReply({ ephemeral: command.private ?? false });
+
+        const interop = new Interop(interaction, command.private ?? false);
+        const [args, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], interaction, interop));
+
+        if (error || !args) {
+            this.emit('argumentParsingError', { interaction, error });
+            return;
+        }
+
+        this.commandHandler(command, interop, args);
     }
 
     /**
      * Handles message-based commands for text commands.
      * @param message - The message to process.
      */
-    private handleMessageInteraction(message: Message) {
+    private async handleMessageInteraction(message: Message) {
         if (
             !this.prefix ||
             message.author.bot ||
@@ -85,24 +73,65 @@ export default class HarmonyClient<
         )
             return;
 
-        const args = message.content.slice(this.prefix.length).trim().split(/\s+/);
+        const args = message.content.slice(this.prefix.length)
+            .trim()
+            .split(/\s+/);
         const commandName = args.shift()?.toLowerCase();
 
         if (!commandName) return;
+
         const command = this.commands.get(commandName);
         if (!command) return;
 
-        const interop = new Interop(message, false);
-        const resolvedArgs = this.resolveCommandArguments(command.options ?? [], interop);
+        const interop = new Interop(message, command.private ?? false);
+        const [resolvedArgs, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], message, interop, args));
+
+        if (error || !resolvedArgs) {
+            this.emit('argumentParsingError', { message, error });
+            return;
+        }
+
+        this.commandHandler(command, interop, resolvedArgs);
+    }
+
+    private async commandHandler<T extends CommandOption<OptionType>[]>(
+        command: Command<T>,
+        interop: Interop,
+        args: ExtractArgsFromOptions<T>
+    ) {
+        if (command.permissions && !interop.member?.permissions.has(command.permissions)) {
+            this.emit('permissionDenied', { command, interop });
+            return;
+        }
+
+        if (command.cooldown) {
+            const current = Date.now();
+            const timeStamps = this.cooldowns.get(command.name)
+                || this.cooldowns.set(command.name, new Collection()).get(command.name)!!;
+            const cooldownTime = (command.cooldown) * 1000;
+
+            const lastuse = timeStamps.get(interop.user.id);
+            if (lastuse && current < lastuse + cooldownTime) {
+                const timeLeft = (lastuse + cooldownTime - current) / 1000;
+                this.emit('cooldownActive', { command, interop, timeLeft });
+            }
+
+            timeStamps.set(interop.user.id, current);
+            setTimeout(() => timeStamps.delete(interop.user.id), cooldownTime);
+        }
+
 
         try {
-            command.execute(this, interop, resolvedArgs);
-        } catch (error) {
-            this.emit("commandError", {
-                commandName: command.name,
-                error,
-                context: { message },
-            });
+            await command.execute(this, interop, args);
+        } catch (err) {
+            this.emit('commandExecutionError', { command, interop, error: err });
         }
+    }
+
+    /**
+     * Dynamically load commands into the client.
+     */
+    public loadCommands(commands: Command<any>[]) {
+        commands.forEach((command) => this.commands.set(command.name, command));
     }
 }
