@@ -1,16 +1,16 @@
 {
   "name": "harmonyts",
-  "version": "1.0.0",
-  "main": "index.js",
+  "description": "A Discord.js client extension for streamlined command handling, argument parsing, and interaction support.",
+  "version": "0.0.1",
+  "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "prepublish": "npx tsc"
   },
   "keywords": [
     "discord"
   ],
-  "author": "",
+  "author": "roteKlaue <https://github.com/roteKlaue>",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "discord.js": "^14.16.3",
     "sussy-util": "^12.0.0"
