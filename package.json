@@ -1,5 +1,5 @@
 {
-  "name": "harmonyts",
+  "name": "flux-bot",
   "description": "A Discord.js client extension for streamlined command handling, argument parsing, and interaction support.",
   "version": "0.0.1",
   "main": "dist/index.js",
@@ -26,10 +26,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/roteKlaue/HarmonyTS"
+    "url": "https://github.com/roteKlaue/flux-bot"
   },
   "bugs": {
-    "url": "https://github.com/roteKlaue/HarmonyTS/issues"
+    "url": "https://github.com/roteKlaue/flux-bot/issues"
   },
-  "homepage": "https://github.com/roteKlaue/HarmonyTS#readme"
+  "homepage": "https://github.com/roteKlaue/flux-bot#readme"
 }

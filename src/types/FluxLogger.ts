@@ -1,4 +1,4 @@
-export interface HarmonyLogger {
+export interface FluxLogger {
     log: (...args: any[]) => void;
     info: (...args: any[]) => void;
     warn: (...args: any[]) => void;
@@ -6,4 +6,4 @@ export interface HarmonyLogger {
     debug?: (...args: any[]) => void;
 }
 
-export default HarmonyLogger;
+export default FluxLogger;

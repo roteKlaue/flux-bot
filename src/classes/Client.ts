@@ -1,16 +1,16 @@
 import { Client, ClientOptions, Collection, Interaction, Message, REST, Routes } from "discord.js";
 import { CommandOption, ExtractArgsFromOptions, OptionType } from "../types/CommandTypings";
-import HarmonyLogger from "../types/HarmonyLogger";
+import FluxLogger from "../types/FluxLogger";
 import OptionParser from "./OptionParser";
 import { PromiseUtil } from "sussy-util";
 import { readdirSync } from "node:fs";
 import Command from "./Command";
 import Interop from "./Interop";
 
-type HarmonyClientOptions<T extends boolean = boolean> = ClientOptions & {
+type FluxClientOptions<T extends boolean = boolean> = ClientOptions & {
     allowTextCommands?: T;
     reloadCommandsOnStartUp?: boolean;
-    logger?: HarmonyLogger;
+    logger?: FluxLogger;
 } & (T extends true ? { prefix: string } : { prefix?: never });
 
 
@@ -18,20 +18,20 @@ type HarmonyClientOptions<T extends boolean = boolean> = ClientOptions & {
  * Custom Discord.js Client for handling commands and interactions.
  * @template T - Indicates whether text commands are allowed.
  */
-export default class HarmonyClient<
+export default class FluxClient<
     T extends boolean = boolean,
     Ready extends boolean = boolean
 > extends Client<Ready> {
     public readonly cooldowns = new Collection<string, Collection<string, number>>();
     public readonly commands = new Collection<string, Command<any>>();
     public readonly prefix: T extends true ? string : undefined;
-    private readonly logger?: HarmonyLogger;
+    private readonly logger?: FluxLogger;
 
     /**
-     * Initializes the HarmonyClient instance.
+     * Initializes the FluxClient instance.
      * @param options - Options to configure the client, including whether text commands are allowed.
      */
-    public constructor(options: HarmonyClientOptions<T>) {
+    public constructor(options: FluxClientOptions<T>) {
         super(options);
 
         this.logger = options.logger;

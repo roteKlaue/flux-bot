@@ -1,6 +1,6 @@
-# HarmonyClient
+# flux-bot
 
-HarmonyClient is an advanced extension for Discord.js that simplifies the process of handling commands, argument parsing, and interactions for both slash and text-based commands.
+flux-bot is an advanced extension for Discord.js that simplifies the process of handling commands, argument parsing, and interactions for both slash and text-based commands.
 
 ## Features
 
@@ -12,10 +12,10 @@ HarmonyClient is an advanced extension for Discord.js that simplifies the proces
 
 ## Installation
 
-Install HarmonyClient via npm:
+Install flux-bot via npm:
 
 ```bash
-npm install harmonyts
+npm install flux-bot
 ```
 
 ## Usage
@@ -25,7 +25,7 @@ npm install harmonyts
 To create a HarmonyClient instance, use the following example:
 
 ```ts
-import HarmonyClient from './HarmonyClient';
+import HarmonyClient from 'flux-bot';
 import { IntentsBitField } from 'discord.js';
 
 const client = new HarmonyClient({
