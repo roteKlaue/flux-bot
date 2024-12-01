@@ -81,8 +81,14 @@ export default class OptionParser {
                 continue;
             }
 
-            if (option.required && option.collect) {
-                parsedArgs.push(args.join(" "));
+            if (option.type === 'STRING' && option.collect) {
+                const collected = args.join(" ");
+
+                if (collected.trim().length < 1 && option.required) {
+                    throw new Error(`Argument ${option.name} requires input.`);
+                }
+
+                parsedArgs.push(collected);
                 break;
             }
 
@@ -92,7 +98,13 @@ export default class OptionParser {
                     parsedValue = arg;
                     break;
                 case "NUMBER":
-                    parsedValue = parseFloat(arg);
+                    parsedValue = +arg;
+                    if (isNaN(parsedValue)) {
+                        throw new Error(`Invalid number for argument: ${option.name}`);
+                    }
+                    break;
+                case "INTEGER":
+                    parsedValue = parseInt(arg);
                     if (isNaN(parsedValue)) {
                         throw new Error(`Invalid number for argument: ${option.name}`);
                     }

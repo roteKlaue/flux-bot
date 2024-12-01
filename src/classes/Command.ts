@@ -25,6 +25,7 @@ class Command<T extends CommandOption<OptionType>[] = []> {
     public readonly options?: CommandOption<OptionType>[];
     public readonly permissions?: PermissionResolvable[];
     public readonly slashCommandConfig = new SlashCommandBuilder();
+    public readonly inDM: boolean;
 
     public readonly execute: CommandExecutor<T>;
 
@@ -36,7 +37,7 @@ class Command<T extends CommandOption<OptionType>[] = []> {
     constructor(props: CommandProps<T>) {
         this.name = props.name.toLowerCase();
 
-        if (this.name.length < 1) 
+        if (this.name.length < 1)
             throw new Error(`[Command Error] Command name must be at least one character long. Affected command: ${JSON.stringify(props)}`);
 
         this.description = props.description;
@@ -44,7 +45,8 @@ class Command<T extends CommandOption<OptionType>[] = []> {
         this.private = props.private;
         this.options = this.validateOptions(props.options);
         this.permissions = props.permissions;
-        this.execute = props.execute;
+        this.execute = props.execute.bind(this);
+        this.inDM = props.inDM ?? false;
 
         this.configureSlashCommand(props);
     }
@@ -124,7 +126,9 @@ class Command<T extends CommandOption<OptionType>[] = []> {
                 }
 
                 settings.addChannelTypes(
-                    option.type === "VOICE_CHANNEL" ? ChannelType.GuildVoice : ChannelType.GuildText
+                    option.type === "VOICE_CHANNEL"
+                        ? ChannelType.GuildVoice
+                        : ChannelType.GuildText
                 );
             }
 
@@ -145,7 +149,7 @@ class Command<T extends CommandOption<OptionType>[] = []> {
      * @param base - The base object to check.
      * @returns True if the base is a channel option, false otherwise.
      */
-    private static isChannelCommandOption(base: any): base is SlashCommandChannelOption {
+    private static isChannelCommandOption(base: unknown): base is SlashCommandChannelOption {
         return base instanceof SlashCommandChannelOption;
     }
 }

@@ -1,12 +1,16 @@
+import { Client, ClientOptions, Collection, Interaction, Message, REST, Routes } from "discord.js";
 import { CommandOption, ExtractArgsFromOptions, OptionType } from "../types/CommandTypings";
-import { Client, ClientOptions, Collection, Interaction, Message } from "discord.js";
+import HarmonyLogger from "../types/HarmonyLogger";
 import OptionParser from "./OptionParser";
 import { PromiseUtil } from "sussy-util";
+import { readdirSync } from "node:fs";
 import Command from "./Command";
 import Interop from "./Interop";
 
 type HarmonyClientOptions<T extends boolean = boolean> = ClientOptions & {
-    allow_text_commands: T;
+    allowTextCommands?: T;
+    reloadCommandsOnStartUp?: boolean;
+    logger?: HarmonyLogger;
 } & (T extends true ? { prefix: string } : { prefix?: never });
 
 
@@ -21,6 +25,7 @@ export default class HarmonyClient<
     public readonly cooldowns = new Collection<string, Collection<string, number>>();
     public readonly commands = new Collection<string, Command<any>>();
     public readonly prefix: T extends true ? string : undefined;
+    private readonly logger?: HarmonyLogger;
 
     /**
      * Initializes the HarmonyClient instance.
@@ -29,13 +34,18 @@ export default class HarmonyClient<
     public constructor(options: HarmonyClientOptions<T>) {
         super(options);
 
-        if (options.allow_text_commands) {
+        this.logger = options.logger;
+        if (options.allowTextCommands) {
             this.prefix = options.prefix as T extends true ? string : undefined;
             this.on("messageCreate", this.handleMessageInteraction.bind(this));
         } else {
             this.prefix = void 0 as T extends true ? string : undefined;
         }
         this.on("interactionCreate", this.handleInteraction.bind(this));
+
+        if (options.reloadCommandsOnStartUp) {
+            this.once("ready", this.reloadCommands.bind(this));
+        }
     }
 
     /**
@@ -49,6 +59,12 @@ export default class HarmonyClient<
         const command = this.commands.get(name);
 
         if (!command) {
+            this.logger?.warn('Unknown command attempted', {
+                commandName: name,
+                userId: interaction.user.id,
+                guildId: interaction.guild?.id,
+            });
+
             this.emit('commandNotFound', { interaction, name });
             return;
         }
@@ -59,7 +75,13 @@ export default class HarmonyClient<
         const [args, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], interaction, interop));
 
         if (error || !args) {
-            this.emit('argumentParsingError', { interaction, error });
+            this.logger?.error('Argument parsing error', {
+                commandName: name,
+                userId: interaction.user.id,
+                error,
+            });
+
+            this.emit('argumentParsingError', { interop, error });
             return;
         }
 
@@ -92,11 +114,27 @@ export default class HarmonyClient<
             message.delete();
         }
 
+        if (!message.guild && command.inDM) {
+            this.logger?.warn('Invalid context for command', {
+                commandName,
+                userId: message.author.id,
+            });
+
+            this.emit('invalidContext', { message, command });
+            return;
+        }
+
         const interop = new Interop(message, command.private ?? false);
         const [resolvedArgs, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], message, interop, args));
 
         if (error || !resolvedArgs) {
-            this.emit('argumentParsingError', { message, error });
+            this.logger?.error('Argument parsing error for text command', {
+                commandName,
+                userId: message.author.id,
+                error,
+            });
+
+            this.emit('argumentParsingError', { error, interop });
             return;
         }
 
@@ -115,6 +153,11 @@ export default class HarmonyClient<
         args: ExtractArgsFromOptions<T>
     ) {
         if (command.permissions && !interop.member?.permissions.has(command.permissions)) {
+            this.logger?.warn('Permission denied', {
+                commandName: command.name,
+                userId: interop.user.id,
+                guildId: interop.guild?.id,
+            });
             this.emit('permissionDenied', { command, interop });
             return;
         }
@@ -128,6 +171,13 @@ export default class HarmonyClient<
             const lastuse = timeStamps.get(interop.user.id);
             if (lastuse && current < lastuse + cooldownTime) {
                 const timeLeft = (lastuse + cooldownTime - current) / 1000;
+
+                this.logger?.info('Cooldown active', {
+                    commandName: command.name,
+                    userId: interop.user.id,
+                    timeLeft,
+                });
+
                 this.emit('cooldownActive', { command, interop, timeLeft });
             }
 
@@ -139,6 +189,12 @@ export default class HarmonyClient<
         try {
             await command.execute(this, interop, args);
         } catch (err) {
+            this.logger?.error('Command execution error', {
+                commandName: command.name,
+                userId: interop.user.id,
+                guildId: interop.guild?.id,
+                error: err,
+            });
             this.emit('commandExecutionError', { command, interop, error: err });
         }
     }
@@ -149,5 +205,22 @@ export default class HarmonyClient<
      */
     public loadCommands(commands: Command<any>[]) {
         commands.forEach((command) => this.commands.set(command.name, command));
+    }
+
+    public loadCommandsFolder(path: string) {
+        const files = readdirSync(path);
+
+        const commands = files
+            .map(e => require(`${path}/${e}`))
+            .map(e => e.default ?? e)
+            .filter(e => e instanceof Command);
+
+        this.loadCommands(commands);
+    }
+
+    public async reloadCommands(): Promise<number> {
+        const rest = new REST({ version: '10' }).setToken(process.env.TOKEN!!);
+        const commands = this.commands.map(e => e.slashCommandConfig.toJSON());
+        return (await rest.put(Routes.applicationCommands(this.user!.id), { body: commands }) as Array<unknown>).length;
     }
 }

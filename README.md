@@ -33,7 +33,7 @@ const client = new HarmonyClient({
         IntentsBitField.Flags.Guilds,
         IntentsBitField.Flags.GuildMessages,
     ],
-    allow_text_commands: true,
+    allowTextCommands: true,
     prefix: '!',
 });
 

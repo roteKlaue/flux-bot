@@ -1,5 +1,17 @@
-import { GuildMember, PermissionResolvable, SlashCommandBooleanOption, SlashCommandChannelOption, SlashCommandIntegerOption, SlashCommandNumberOption, SlashCommandStringOption, SlashCommandUserOption, TextChannel, VoiceBasedChannel } from "discord.js";
+import {
+    GuildMember,
+    PermissionResolvable,
+    SlashCommandBooleanOption,
+    SlashCommandChannelOption,
+    SlashCommandIntegerOption,
+    SlashCommandNumberOption,
+    SlashCommandStringOption,
+    SlashCommandUserOption,
+    TextChannel,
+    VoiceBasedChannel
+} from "discord.js";
 import Interop from "../classes/Interop";
+import Command from "../classes/Command";
 import Client from "../classes/Client";
 import { PromiseOr } from "sussy-util";
 
@@ -30,7 +42,7 @@ export type CommandOptionProperties<T extends OptionType> = {
     readonly description: string;
     readonly type: T;
     readonly choises?: ChoisesType<T>;
-}
+} & (T extends 'STRING' ? { readonly collect?: boolean; } : { readonly collect?: never; })
 
 /**
  * Represents an optional command option.
@@ -47,7 +59,6 @@ export type CommandOptionOptional<T extends OptionType> = CommandOptionPropertie
  */
 export type CommandOptionRequired<T extends OptionType> = CommandOptionProperties<T> & {
     readonly required: true;
-    readonly collect?: boolean;
 }
 
 /**
@@ -81,7 +92,11 @@ export type ExtractArgsFromOptions<T extends CommandOption<OptionType>[] = []> =
  * Function signature for executing a command.
  * @template T - The list of command options.
  */
-export type CommandExecutor<T extends CommandOption<OptionType>[] = []> = (client: Client, interopt: Interop, args: ExtractArgsFromOptions<T>) => PromiseOr<void>;
+export type CommandExecutor<T extends CommandOption<OptionType>[] = []> = (
+    this: Command<T>,
+    client: Client,
+    interopt: Interop,
+    args: ExtractArgsFromOptions<T>) => PromiseOr<void>;
 
 /**
  * Properties required to define a command.

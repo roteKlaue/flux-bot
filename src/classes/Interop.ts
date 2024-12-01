@@ -1,5 +1,4 @@
 import { Channel, CommandInteraction, EmbedBuilder, Message, User, APIActionRowComponent, APIMessageActionRowComponent, Guild, GuildMember } from "discord.js";
-import EventEmitter from "node:events";
 
 type MessagePayload = string | {
     content?: string;
@@ -27,7 +26,7 @@ export interface IInterop<Private extends boolean = boolean> {
  * between interaction-based and message-based commands.
  * @template T - Indicates whether the interaction is private.
  */
-export default class Interop<T extends boolean = boolean> extends EventEmitter implements IInterop {
+export default class Interop<T extends boolean = boolean> implements IInterop {
     private readonly replyFunction: (content: MessagePayload) => Promise<Message>;
     private readonly deleterFunction: () => Promise<void>;
 
@@ -44,8 +43,6 @@ export default class Interop<T extends boolean = boolean> extends EventEmitter i
      * @throws {TypeError} If the base is not a CommandInteraction or Message.
      */
     public constructor(base: CommandInteraction | Message<boolean>, private readonly isPrivate: T) {
-        super();
-
         if (!(base instanceof CommandInteraction || base instanceof Message)) {
             throw new TypeError("Interop expects CommandInteraction or Message as base.");
         }
