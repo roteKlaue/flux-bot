@@ -22,13 +22,13 @@ npm install flux-bot
 
 ### Creating a Client
 
-To create a HarmonyClient instance, use the following example:
+To create a FluxClient instance, use the following example:
 
 ```ts
-import HarmonyClient from 'flux-bot';
+import { FluxClient } from 'flux-bot';
 import { IntentsBitField } from 'discord.js';
 
-const client = new HarmonyClient({
+const client = new FluxClient({
     intents: [
         IntentsBitField.Flags.Guilds,
         IntentsBitField.Flags.GuildMessages,
@@ -60,7 +60,7 @@ client.loadCommands([
 
 ### Events
 
-HarmonyClient emits various events for handling errors and custom logic:
+FluxClient emits various events for handling errors and custom logic:
 
 - commandNotFound
 - argumentParsingError

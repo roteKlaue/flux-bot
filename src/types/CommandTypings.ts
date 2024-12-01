@@ -31,7 +31,9 @@ export type DefaultValueForOption<T extends OptionType> =
  * Choices for option types that support them (STRING, NUMBER, INTEGER).
  * @template T - The type of the option.
  */
-export type ChoisesType<T extends OptionType> = T extends 'INTEGER' | 'STRING' | 'NUMBER' ? Array<{ name: string; value: OptionTypeMapping<T> }> : never;
+export type ChoisesType<T extends OptionType> = T extends 'INTEGER' | 'STRING' | 'NUMBER' 
+    ? Array<{ name: string; value: OptionTypeMapping<T> }> 
+    : never;
 
 /**
  * Properties required for all command options.
@@ -42,6 +44,7 @@ export type CommandOptionProperties<T extends OptionType> = {
     readonly description: string;
     readonly type: T;
     readonly choises?: ChoisesType<T>;
+    validate?: (value: OptionTypeMapping<T>, interop: Interop) => PromiseOr<boolean>;
 } & (T extends 'STRING' ? { readonly collect?: boolean; } : { readonly collect?: never; })
 
 /**

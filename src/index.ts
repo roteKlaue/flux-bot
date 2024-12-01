@@ -4,6 +4,7 @@ import Interop from "./classes/Interop";
 
 export * from "./types/CommandTypings";
 export * from "./classes/Command";
+export * from "./types/FluxMiddleware";
 
 export {
     FluxClient,

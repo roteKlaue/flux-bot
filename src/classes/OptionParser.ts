@@ -1,4 +1,4 @@
-import { ExtractArgsFromOptions } from "../types/CommandTypings";
+import { ExtractArgsFromOptions, OptionTypeMapping } from "../types/CommandTypings";
 import { CommandInteraction, Message } from "discord.js";
 import { CommandOption, OptionType } from "./Command";
 import Interop from "./Interop";
@@ -20,7 +20,7 @@ export default class OptionParser {
         if (!options?.length) return [] as ExtractArgsFromOptions<T>;
 
         return options.map((option) => {
-            const { type, name, required } = option;
+            const { type, name, required, validate } = option;
             const optionValue = interaction.options.get(name, required);
             if (!optionValue || !optionValue.value) return void 0;
 
@@ -30,20 +30,35 @@ export default class OptionParser {
                         ? option.defaultValue(interop)
                         : option.defaultValue;
                 }
-                return undefined;
+                return void 0;
             }
 
+            let parsedValue;
             switch (type) {
                 case "STRING":
                 case "NUMBER":
                 case "BOOLEAN":
-                    return optionValue?.value;
+                    parsedValue = optionValue;
+                    break;
                 case "USER":
-                    return interaction.guild!.members.cache.get(optionValue.value + "");
-                case "VOICE_CHANNEL":
+                    parsedValue = interaction.guild?.members.cache.get(optionValue.toString());
+                    break;
                 case "TEXT_CHANNEL":
-                    return interaction.guild!.channels.cache.get(optionValue.value + "");
+                case "VOICE_CHANNEL":
+                    parsedValue = interaction.guild?.channels.cache.get(optionValue.toString());
+                    break;
+                default:
+                    throw new Error(`Unsupported argument type: ${type}`);
             }
+
+            if (validate) {
+                const isValid = validate(parsedValue as OptionTypeMapping<OptionType>, interop);
+                if (!isValid) {
+                    throw new Error(`Validation failed for argument: ${name}`);
+                }
+            }
+
+            return parsedValue;
         }) as ExtractArgsFromOptions<T>;
     };
 
@@ -126,11 +141,26 @@ export default class OptionParser {
                     }
                     break;
                 case "TEXT_CHANNEL":
+                    try {
+                        parsedValue = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
+                        if (!parsedValue) {
+                            throw new Error(`Channel not found for argument: ${option.name}`);
+                        }
+                        if (!parsedValue.isTextBased()) {
+                            throw new Error(`Provided argument for ${option.name} is not a text channel.`);
+                        }
+                    } catch {
+                        throw new Error(`Channel not found for argument: ${option.name}`);
+                    }
+                    break;
                 case "VOICE_CHANNEL":
                     try {
                         parsedValue = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
                         if (!parsedValue) {
                             throw new Error(`Channel not found for argument: ${option.name}`);
+                        }
+                        if (!parsedValue.isVoiceBased()) {
+                            throw new Error(`Provided argument for ${option.name} is not a voice channel.`);
                         }
                     } catch {
                         throw new Error(`Channel not found for argument: ${option.name}`);
@@ -138,6 +168,13 @@ export default class OptionParser {
                     break;
                 default:
                     throw new Error(`Unsupported argument type: ${option.type}`);
+            }
+
+            if (option.validate) {
+                const isValid = option.validate(parsedValue as OptionTypeMapping<OptionType>, interop);
+                if (!isValid) {
+                    throw new Error(`Validation failed for argument: ${option.name}`);
+                }
             }
 
             args.shift();

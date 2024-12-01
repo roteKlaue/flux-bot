@@ -1,5 +1,6 @@
 import { Client, ClientOptions, Collection, Interaction, Message, REST, Routes } from "discord.js";
 import { CommandOption, ExtractArgsFromOptions, OptionType } from "../types/CommandTypings";
+import { Middleware, MiddlewareContext } from "../types/FluxMiddleware";
 import FluxLogger from "../types/FluxLogger";
 import OptionParser from "./OptionParser";
 import { PromiseUtil } from "sussy-util";
@@ -20,16 +21,18 @@ type FluxClientOptions<T extends boolean = boolean> = ClientOptions & {
  */
 export default class FluxClient<
     T extends boolean = boolean,
-    Ready extends boolean = boolean
-> extends Client<Ready> {
+> extends Client {
     public readonly cooldowns = new Collection<string, Collection<string, number>>();
     public readonly commands = new Collection<string, Command<any>>();
     public readonly prefix: T extends true ? string : undefined;
     private readonly logger?: FluxLogger;
 
+    public readonly preExecutionMiddleware: Middleware[] = [];
+    public readonly postExecutionMiddleware: Middleware[] = [];
+
     /**
      * Initializes the FluxClient instance.
-     * @param options - Options to configure the client, including whether text commands are allowed.
+     * @param options - Configuration options for the client.
      */
     public constructor(options: FluxClientOptions<T>) {
         super(options);
@@ -49,7 +52,7 @@ export default class FluxClient<
     }
 
     /**
-     * Handles slash command interactions.
+     * Handles slash command interactions from Discord.
      * @param interaction - The Discord interaction to process.
      */
     private async handleInteraction(interaction: Interaction) {
@@ -75,13 +78,13 @@ export default class FluxClient<
         const [args, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], interaction, interop));
 
         if (error || !args) {
-            this.logger?.error('Argument parsing error', {
+            this.logger?.info('Invalid arguments given for interaction', {
                 commandName: name,
                 userId: interaction.user.id,
                 error,
             });
 
-            this.emit('argumentParsingError', { interop, error });
+            this.emit('invalidArgumentsGiven', { interop, error });
             return;
         }
 
@@ -130,13 +133,13 @@ export default class FluxClient<
         const [resolvedArgs, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], message, interop, args));
 
         if (error || !resolvedArgs) {
-            this.logger?.error('Argument parsing error for text command', {
+            this.logger?.info('Invalid arguments given for text command', {
                 commandName,
                 userId: message.author.id,
                 error,
             });
 
-            this.emit('argumentParsingError', { error, interop });
+            this.emit('invalidArgumentsGiven', { error, interop });
             return;
         }
 
@@ -144,7 +147,7 @@ export default class FluxClient<
     }
 
     /**
-     * Executes a command after validation and handling of permissions, cooldowns, and errors.
+     * Executes a command after middleware, validation and handling of permissions, cooldowns, and errors.
      * @param command - The command to execute.
      * @param interop - The interop object representing the interaction or message.
      * @param args - The parsed arguments for the command.
@@ -187,6 +190,21 @@ export default class FluxClient<
             setTimeout(() => timeStamps.delete(interop.user.id), cooldownTime);
         }
 
+        const context = { command, args, interop, client: this };
+
+        let preExecutionPassed = true;
+        try {
+            preExecutionPassed = await this.executeMiddleware(this.preExecutionMiddleware, context);
+        } catch (err) {
+            this.logger?.error('Pre-execution middleware error', { command: command.name, error: err });
+            this.emit('middlewareError', { command, interop, error: err });
+            return;
+        }
+
+        if (!preExecutionPassed) {
+            this.logger?.warn('Middleware blocked command execution', { command: command.name });
+            return;
+        }
 
         try {
             await command.execute(this, interop, args);
@@ -199,6 +217,60 @@ export default class FluxClient<
             });
             this.emit('commandExecutionError', { command, interop, error: err });
         }
+
+        try {
+            await this.executeMiddleware(this.postExecutionMiddleware, context);
+        } catch (err) {
+            this.logger?.error('Post-execution middleware error', { command: command.name, error: err });
+            this.emit('middlewareError', { command, interop, error: err });
+        }
+    }
+
+    /**
+     * Executes a list of middleware functions sequentially.
+     * @param middleware - The list of middleware functions to execute.
+     * @param context - The middleware context to pass.
+     * @returns Whether execution passed all middleware.
+     */
+    private async executeMiddleware(middleware: Middleware[], context: MiddlewareContext) {
+        let index = -1;
+        let continueExecution = true;
+
+        const next = async () => {
+            index++;
+            if (index < middleware.length) {
+                try {
+                    await middleware[index](context, next);
+                } catch (err) {
+                    continueExecution = false;
+                    throw err;
+                }
+            }
+        };
+
+        try {
+            await next();
+        } catch {
+            continueExecution = false;
+        }
+
+        return continueExecution;
+    }
+
+    /**
+     * Registers a pre-execution middleware function.
+     * @param middleware - The middleware function to register.
+     */
+    public registerPreExecutionMiddleware(middleware: Middleware): void {
+        this.preExecutionMiddleware.push(middleware);
+    }
+
+    /**
+     * Registers a post-execution middleware function.
+     * @param middleware - The middleware function to register.
+     */
+    public registerPostExecutionMiddleware(middleware: Middleware): void {
+        this.postExecutionMiddleware.push(middleware);
     }
 
     /**
@@ -209,6 +281,10 @@ export default class FluxClient<
         commands.forEach((command) => this.commands.set(command.name, command));
     }
 
+    /**
+     * Loads command files from a specified folder.
+     * @param path - The path to the folder containing command files.
+     */
     public loadCommandsFolder(path: string) {
         const files = readdirSync(path);
 
@@ -220,6 +296,10 @@ export default class FluxClient<
         this.loadCommands(commands);
     }
 
+    /**
+     * Reloads all commands and updates Discord with the latest slash command configurations.
+     * @returns The number of commands reloaded.
+     */
     public async reloadCommands(): Promise<number> {
         const rest = new REST({ version: '10' }).setToken(process.env.TOKEN!!);
         const commands = this.commands.map(e => e.slashCommandConfig.toJSON());
