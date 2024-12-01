@@ -1,5 +1,119 @@
 import { ChannelType, InteractionContextType, PermissionResolvable, SlashCommandBuilder, SlashCommandChannelOption } from "discord.js";
 import { CommandExecutor, CommandOption, CommandProps, OptionType } from "../types/CommandTypings";
+import { Builder } from "sussy-util";
+
+class CommandBuilder implements Builder<Command> {
+    private name?: string;
+    private description?: string;
+    private cooldown?: number;
+    private category?: string;
+    private private?: boolean;
+    private options: CommandOption<OptionType>[] = [];
+    private permissions?: PermissionResolvable[];
+    private inDM: boolean = false;
+    private execute?: CommandExecutor<any>;
+    private aliases?: string[];
+
+    setName(name: string): this {
+        if (!name?.length) {
+            throw new Error(`[CommandBuilder Error] Command name must be at least one character long.`);
+        }
+        this.name = name.toLowerCase();
+        return this;
+    }
+
+    setCategory(category: string) {
+        this.category = category;
+        return this;
+    }
+
+    setDescription(description: string): this {
+        if (!description?.length) {
+            throw new Error(`[CommandBuilder Error] Command description must be at least one character long.`);
+        }
+        this.description = description;
+        return this;
+    }
+
+    setAliases(aliases: string[]): this {
+        this.aliases = aliases;
+        return this;
+    }
+
+    addAlias(alias: string): this {
+        if (!this.aliases) this.aliases = [];
+        this.aliases.push(alias);
+        return this;
+    }
+
+    setCooldown(cooldown: number): this {
+        if (cooldown < 0) {
+            throw new Error(`[CommandBuilder Error] Cooldown must be a non-negative number.`);
+        }
+        this.cooldown = cooldown;
+        return this;
+    }
+
+    setPrivate(isPrivate: boolean): this {
+        this.private = isPrivate;
+        return this;
+    }
+
+    setPermissions(permissions: PermissionResolvable[]): this {
+        this.permissions = permissions;
+        return this;
+    }
+
+    addPermission(permission: PermissionResolvable): this {
+        if (!permission) {
+            throw new Error(`[CommandBuilder Error] Invalid permission.`);
+        }
+
+        if (!this.permissions) this.permissions = [];
+
+        if (!this.permissions.includes(permission)) {
+            this.permissions.push(permission);
+        }
+        return this;
+    }
+
+    setInDM(inDM: boolean): this {
+        this.inDM = inDM;
+        return this;
+    }
+
+    addOption(option: CommandOption<OptionType>): this {
+        if (!option?.name || option?.name?.length < 1) {
+            throw new Error(`[CommandBuilder Error] Option name must be at least one character long.`);
+        }
+        this.options.push({ ...option, name: option.name.toLowerCase() });
+        return this;
+    }
+
+    setExecutor(executor: CommandExecutor<any>): this {
+        this.execute = executor;
+        return this;
+    }
+
+    build(): Command {
+        if (!this.name || !this.description || !this.execute) {
+            throw new Error(`[CommandBuilder Error] Missing required properties: name, description, or execute function.`);
+        }
+
+        return new Command({
+            name: this.name,
+            description: this.description,
+            aliases: this.aliases,
+            category: this.category,
+            cooldown: this.cooldown,
+            private: this.private,
+            options: this.options,
+            permissions: this.permissions,
+            inDM: this.inDM,
+            execute: this.execute,
+        });
+    }
+}
 
 const typeToMethodMap: {
     [K in OptionType]: (builder: SlashCommandBuilder, setup: (option: any) => any) => void;
@@ -20,6 +134,8 @@ const typeToMethodMap: {
 class Command<T extends CommandOption<OptionType>[] = []> {
     public readonly name: string;
     public readonly description: string;
+    public readonly aliases?: string[];
+    public readonly category: string;
     public readonly cooldown?: number;
     public readonly private?: boolean;
     public readonly options?: CommandOption<OptionType>[];
@@ -42,6 +158,8 @@ class Command<T extends CommandOption<OptionType>[] = []> {
 
         this.description = props.description;
         this.cooldown = props.cooldown;
+        this.aliases = props.aliases;
+        this.category = props.category ?? "Miscellaneous";
         this.private = props.private;
         this.options = this.validateOptions(props.options);
         this.permissions = props.permissions;
@@ -157,7 +275,8 @@ class Command<T extends CommandOption<OptionType>[] = []> {
 export {
     OptionType,
     CommandOption,
-    Command
+    Command,
+    CommandBuilder
 };
 
 export default Command;

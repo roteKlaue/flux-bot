@@ -105,6 +105,8 @@ export type CommandExecutor<T extends CommandOption<OptionType>[] = []> = (
 export type CommandProps<T extends CommandOption<OptionType>[] = []> = {
     name: string;
     description: string;
+    aliases?: string[];
+    category?: string;
     cooldown?: number;
     private?: boolean;
     options?: T;

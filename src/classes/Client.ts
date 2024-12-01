@@ -107,7 +107,9 @@ export default class HarmonyClient<
 
         if (!commandName) return;
 
-        const command = this.commands.get(commandName);
+        const command = this.commands.get(commandName)
+            || this.commands.find(cmd => cmd.aliases?.includes(commandName));
+
         if (!command) return;
 
         if (command.private) {
