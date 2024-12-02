@@ -278,7 +278,15 @@ export default class FluxClient<
      * @param commands - The commands to load.
      */
     public loadCommands(commands: Command<any>[]) {
-        commands.forEach((command) => this.commands.set(command.name, command));
+        commands.forEach((command) => {
+            if (
+                this.commands.has(command.name) || 
+                command.aliases?.some(alias => this.commands.some(cmd => cmd.name === alias || cmd.aliases?.includes(alias)))
+            ) {
+                this.logger?.warn("Command Name | Aliases overlap", { command, name: command.name, aliases: command.aliases });
+            }            
+            this.commands.set(command.name, command);
+        });
     }
 
     /**
@@ -301,7 +309,12 @@ export default class FluxClient<
      * @returns The number of commands reloaded.
      */
     public async reloadCommands(): Promise<number> {
-        const rest = new REST({ version: '10' }).setToken(process.env.TOKEN!!);
+        if (!this.isReady()) {
+            this.logger?.warn('Client is not ready, aborting command reload.');
+            return 0;
+        }
+
+        const rest = new REST({ version: '10' }).setToken(this.token!!);
         const commands = this.commands.map(e => e.slashCommandConfig.toJSON());
         return (await rest.put(Routes.applicationCommands(this.user!.id), { body: commands }) as Array<unknown>).length;
     }
