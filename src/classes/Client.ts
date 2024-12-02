@@ -1,6 +1,7 @@
 import { Client, ClientOptions, Collection, Interaction, Message, REST, Routes } from "discord.js";
 import { CommandOption, ExtractArgsFromOptions, OptionType } from "../types/CommandTypings";
 import { Middleware, MiddlewareContext } from "../types/FluxMiddleware";
+import { ArgumentError } from "./errors/ArgumentError";
 import FluxLogger from "../types/FluxLogger";
 import OptionParser from "./OptionParser";
 import { PromiseUtil } from "sussy-util";
@@ -32,7 +33,7 @@ export default class FluxClient<
 
     /**
      * Initializes the FluxClient instance.
-     * @param options - Configuration options for the client.
+     * @param options - Configuration options for the client.s
      */
     public constructor(options: FluxClientOptions<T>) {
         super(options);
@@ -75,7 +76,7 @@ export default class FluxClient<
         await interaction.deferReply({ ephemeral: command.private ?? false });
 
         const interop = new Interop(interaction, command.private ?? false);
-        const [args, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], interaction, interop));
+        const [args, error] = await PromiseUtil.handler<ExtractArgsFromOptions<any>, ArgumentError>(OptionParser.parseOptions(command.options ?? [], interaction, interop));
 
         if (error || !args) {
             this.logger?.info('Invalid arguments given for interaction', {
@@ -192,22 +193,23 @@ export default class FluxClient<
 
         const context = { command, args, interop, client: this };
 
-        let preExecutionPassed = true;
         try {
-            preExecutionPassed = await this.executeMiddleware(this.preExecutionMiddleware, context);
+            await this.executeMiddleware([...this.preExecutionMiddleware, this.postPreExecution], context);
         } catch (err) {
             this.logger?.error('Pre-execution middleware error', { command: command.name, error: err });
             this.emit('middlewareError', { command, interop, error: err });
             return;
         }
+    }
 
-        if (!preExecutionPassed) {
-            this.logger?.warn('Middleware blocked command execution', { command: command.name });
-            return;
-        }
-
+    private async postPreExecution<T extends CommandOption<OptionType>[]>({ command, args, interop }: {
+        command: Command<T>;
+        args: unknown[];
+        interop: Interop;
+        client: FluxClient;
+    }) {
         try {
-            await command.execute(this, interop, args);
+            await command.execute(this, interop, args as ExtractArgsFromOptions<T>);
         } catch (err) {
             this.logger?.error('Command execution error', {
                 commandName: command.name,
@@ -219,7 +221,7 @@ export default class FluxClient<
         }
 
         try {
-            await this.executeMiddleware(this.postExecutionMiddleware, context);
+            await this.executeMiddleware(this.postExecutionMiddleware, { command, args, interop, client: this });
         } catch (err) {
             this.logger?.error('Post-execution middleware error', { command: command.name, error: err });
             this.emit('middlewareError', { command, interop, error: err });
@@ -234,7 +236,6 @@ export default class FluxClient<
      */
     private async executeMiddleware(middleware: Middleware[], context: MiddlewareContext) {
         let index = -1;
-        let continueExecution = true;
 
         const next = async () => {
             index++;
@@ -242,19 +243,12 @@ export default class FluxClient<
                 try {
                     await middleware[index](context, next);
                 } catch (err) {
-                    continueExecution = false;
                     throw err;
                 }
             }
         };
 
-        try {
-            await next();
-        } catch {
-            continueExecution = false;
-        }
-
-        return continueExecution;
+        await next();
     }
 
     /**
@@ -280,11 +274,11 @@ export default class FluxClient<
     public loadCommands(commands: Command<any>[]) {
         commands.forEach((command) => {
             if (
-                this.commands.has(command.name) || 
+                this.commands.has(command.name) ||
                 command.aliases?.some(alias => this.commands.some(cmd => cmd.name === alias || cmd.aliases?.includes(alias)))
             ) {
                 this.logger?.warn("Command Name | Aliases overlap", { command, name: command.name, aliases: command.aliases });
-            }            
+            }
             this.commands.set(command.name, command);
         });
     }

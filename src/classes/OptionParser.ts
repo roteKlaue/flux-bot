@@ -1,5 +1,6 @@
 import { ExtractArgsFromOptions, OptionTypeMapping } from "../types/CommandTypings";
 import { CommandInteraction, Message } from "discord.js";
+import { ArgumentError } from "./errors/ArgumentError";
 import { CommandOption, OptionType } from "./Command";
 import Interop from "./Interop";
 
@@ -48,13 +49,13 @@ export default class OptionParser {
                     parsedValue = interaction.guild?.channels.cache.get(optionValue.toString());
                     break;
                 default:
-                    throw new Error(`Unsupported argument type: ${type}`);
+                    throw new ArgumentError(name, `Unsupported argument type: ${type}`);
             }
 
             if (validate) {
                 const isValid = validate(parsedValue as OptionTypeMapping<OptionType>, interop);
                 if (!isValid) {
-                    throw new Error(`Validation failed for argument: ${name}`);
+                    throw new ArgumentError(name, "Validation failed.");
                 }
             }
 
@@ -85,7 +86,7 @@ export default class OptionParser {
             const arg = args[0];
 
             if (option.required && !arg) {
-                throw new Error(`Missing required argument: ${option.name}`);
+                throw new ArgumentError(option.name, "Required argument is missing.");
             }
 
             if (!arg && !option.required) {
@@ -115,65 +116,53 @@ export default class OptionParser {
                 case "NUMBER":
                     parsedValue = +arg;
                     if (isNaN(parsedValue)) {
-                        throw new Error(`Invalid number for argument: ${option.name}`);
+                        throw new ArgumentError(option.name, "Invalid number.");
                     }
                     break;
                 case "INTEGER":
                     parsedValue = parseInt(arg);
                     if (isNaN(parsedValue)) {
-                        throw new Error(`Invalid number for argument: ${option.name}`);
+                        throw new ArgumentError(option.name, "Invalid number.");
                     }
                     break;
                 case "BOOLEAN":
                     parsedValue = arg?.toLowerCase() === "true";
                     if (!["true", "false"].includes(arg?.toLowerCase())) {
-                        throw new Error(`Invalid boolean for argument: ${option.name}`);
+                        throw new ArgumentError(option.name, "Invalid boolean value.");
                     }
                     break;
                 case "USER":
                     try {
                         parsedValue = await message.guild!.members.fetch(arg.replace(/[^0-9]/g, ""));
                         if (!parsedValue) {
-                            throw new Error(`User not found for argument: ${option.name}`);
+                            throw new ArgumentError(option.name, "User not found.");
                         }
                     } catch {
-                        throw new Error(`User not found for argument: ${option.name}`);
+                        throw new ArgumentError(option.name, "User not found.");
                     }
                     break;
                 case "TEXT_CHANNEL":
-                    try {
-                        parsedValue = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
-                        if (!parsedValue) {
-                            throw new Error(`Channel not found for argument: ${option.name}`);
-                        }
-                        if (!parsedValue.isTextBased()) {
-                            throw new Error(`Provided argument for ${option.name} is not a text channel.`);
-                        }
-                    } catch {
-                        throw new Error(`Channel not found for argument: ${option.name}`);
-                    }
-                    break;
                 case "VOICE_CHANNEL":
-                    try {
-                        parsedValue = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
-                        if (!parsedValue) {
-                            throw new Error(`Channel not found for argument: ${option.name}`);
-                        }
-                        if (!parsedValue.isVoiceBased()) {
-                            throw new Error(`Provided argument for ${option.name} is not a voice channel.`);
-                        }
-                    } catch {
-                        throw new Error(`Channel not found for argument: ${option.name}`);
+                    const channel = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
+                    if (!channel) {
+                        throw new ArgumentError(option.name, "Channel not found.");
                     }
+                    if (
+                        (option.type === "TEXT_CHANNEL" && !channel.isTextBased()) ||
+                        (option.type === "VOICE_CHANNEL" && !channel.isVoiceBased())
+                    ) {
+                        throw new ArgumentError(option.name, `Provided channel is not a ${option.type.toLowerCase().replace("_", " ")}.`);
+                    }
+                    parsedValue = channel;
                     break;
                 default:
-                    throw new Error(`Unsupported argument type: ${option.type}`);
+                    throw new ArgumentError(option.name, `Unsupported argument type: ${option.type}`);
             }
 
             if (option.validate) {
                 const isValid = option.validate(parsedValue as OptionTypeMapping<OptionType>, interop);
                 if (!isValid) {
-                    throw new Error(`Validation failed for argument: ${option.name}`);
+                    throw new ArgumentError(option.name, "Validation failed.");
                 }
             }
 
