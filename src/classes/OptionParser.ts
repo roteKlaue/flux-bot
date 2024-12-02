@@ -26,12 +26,9 @@ export default class OptionParser {
             if (!optionValue || !optionValue.value) return void 0;
 
             if ((!optionValue || optionValue.value === void 0) && !required) {
-                if (!required) {
-                    return typeof option.defaultValue === "function"
-                        ? option.defaultValue(interop)
-                        : option.defaultValue;
-                }
-                return void 0;
+                return typeof option.defaultValue === "function"
+                    ? option.defaultValue(interop)
+                    : option.defaultValue;
             }
 
             let parsedValue;
@@ -39,14 +36,14 @@ export default class OptionParser {
                 case "STRING":
                 case "NUMBER":
                 case "BOOLEAN":
-                    parsedValue = optionValue;
+                    parsedValue = optionValue.value;
                     break;
                 case "USER":
-                    parsedValue = interaction.guild?.members.cache.get(optionValue.toString());
+                    parsedValue = interaction.guild?.members.cache.get(optionValue.value.toString());
                     break;
                 case "TEXT_CHANNEL":
                 case "VOICE_CHANNEL":
-                    parsedValue = interaction.guild?.channels.cache.get(optionValue.toString());
+                    parsedValue = interaction.guild?.channels.cache.get(optionValue.value.toString());
                     break;
                 default:
                     throw new ArgumentError(name, `Unsupported argument type: ${type}`);
