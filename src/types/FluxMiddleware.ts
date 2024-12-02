@@ -1,7 +1,7 @@
-import { PromiseOr } from "sussy-util";
 import FluxClient from "../classes/Client";
 import Command from "../classes/Command";
 import Interop from "../classes/Interop";
+import { PromiseOr } from "sussy-util";
 
 /**
  * Represents a middleware function that can process a command execution context.

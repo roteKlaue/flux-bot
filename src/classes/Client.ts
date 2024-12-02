@@ -2,17 +2,20 @@ import { Client, ClientOptions, Collection, Interaction, Message, REST, Routes }
 import { CommandOption, ExtractArgsFromOptions, OptionType } from "../types/CommandTypings";
 import { Middleware, MiddlewareContext } from "../types/FluxMiddleware";
 import { ArgumentError } from "./errors/ArgumentError";
+import { readdirSync, lstatSync } from "node:fs";
+import { Plugin } from "../types/FluxPlugin";
 import FluxLogger from "../types/FluxLogger";
 import OptionParser from "./OptionParser";
 import { PromiseUtil } from "sussy-util";
-import { readdirSync } from "node:fs";
 import Command from "./Command";
 import Interop from "./Interop";
+import PluginManager from "./PluginManager";
 
 type FluxClientOptions<T extends boolean = boolean> = ClientOptions & {
     allowTextCommands?: T;
     reloadCommandsOnStartUp?: boolean;
     logger?: FluxLogger;
+    plugins?: Plugin[] | string;
 } & (T extends true ? { prefix: string } : { prefix?: never });
 
 
@@ -25,11 +28,13 @@ export default class FluxClient<
 > extends Client {
     public readonly cooldowns = new Collection<string, Collection<string, number>>();
     public readonly commands = new Collection<string, Command<any>>();
+    public readonly plugins = new Collection<string, Plugin>();
     public readonly prefix: T extends true ? string : undefined;
-    private readonly logger?: FluxLogger;
+    public readonly logger?: FluxLogger;
 
     public readonly preExecutionMiddleware: Middleware[] = [];
     public readonly postExecutionMiddleware: Middleware[] = [];
+    public readonly pluginManager = new PluginManager(this);
 
     /**
      * Initializes the FluxClient instance.
@@ -50,6 +55,89 @@ export default class FluxClient<
         if (options.reloadCommandsOnStartUp) {
             this.once("ready", this.reloadCommands.bind(this));
         }
+
+        if (options.plugins) {
+            this.pluginManager.loadPlugins(options.plugins);
+        }
+    }
+
+    /**
+     * Registers a plugin with the client.
+     * @param plugin - The plugin to register.
+     * @returns True if the plugin was successfully registered, false if already registered.
+     */
+    registerPlugin(plugin: Plugin): boolean {
+        if (this.plugins.has(plugin.name)) {
+            this.logger?.warn(`Plugin already registered: ${plugin.name}`);
+            return false;
+        }
+
+        this.plugins.set(plugin.name, plugin);
+        this.logger?.info(`Plugin registered: ${plugin.name} (v${plugin.version})`);
+        return true;
+    }
+
+    /**
+     * Unregisters a plugin from the client.
+     * @param pluginName - The name of the plugin to unregister.
+     * @returns True if the plugin was successfully unregistered, false if not found.
+     */
+    unregisterPlugin(pluginName: string): boolean {
+        if (!this.plugins.has(pluginName)) {
+            this.logger?.warn(`Plugin not found: ${pluginName}`);
+            return false;
+        }
+
+        this.plugins.delete(pluginName);
+        this.logger?.info(`Plugin unregistered: ${pluginName}`);
+        return true;
+    }
+
+    /**
+     * Retrieves a plugin by name.
+     * @param pluginName - The name of the plugin.
+     * @returns The plugin instance or undefined if not found.
+     */
+    getPlugin(pluginName: string): Plugin | undefined {
+        return this.plugins.get(pluginName);
+    }
+
+    /**
+     * Handles interactions and delegates to plugins with interaction-specific hooks.
+     * @param interaction - The interaction event.
+     */
+    private async handlePluginInteraction(interaction: Interaction) {
+        for (const plugin of this.plugins.values()) {
+            try {
+                if (interaction.isCommand() && plugin.onCommandInteraction) {
+                    await plugin.onCommandInteraction(interaction);
+                } else if (interaction.isAnySelectMenu() && plugin.onMenuInteraction) {
+                    await plugin.onMenuInteraction(interaction);
+                } else if (interaction.isButton() && plugin.onButtonInteraction) {
+                    await plugin.onButtonInteraction(interaction);
+                } else {
+                    await plugin.onInteraction?.(interaction);
+                }
+            } catch (error) {
+                this.emit("pluginError", { plugin, error })
+                this.logger?.error(`Plugin failed to handle interaction: ${plugin.name}`, { error });
+            }
+        }
+    }
+
+    /**
+     * Handles incoming messages and delegates to plugins with `onMessage` hooks.
+     * @param message - The message event.
+     */
+    private async handlePluginMessage(message: Message) {
+        for (const plugin of this.plugins.values()) {
+            try {
+                await plugin.onMessage?.(message);
+            } catch (error) {
+                this.emit("pluginError", { plugin, error })
+                this.logger?.error(`Plugin failed to handle message: ${plugin.name}`, { error });
+            }
+        }
     }
 
     /**
@@ -57,6 +145,7 @@ export default class FluxClient<
      * @param interaction - The Discord interaction to process.
      */
     private async handleInteraction(interaction: Interaction) {
+        await this.handlePluginInteraction(interaction);
         if (!interaction.isCommand()) return;
 
         const name = interaction.commandName;
@@ -130,6 +219,8 @@ export default class FluxClient<
             return;
         }
 
+        this.handlePluginMessage(message);
+
         const interop = new Interop(message, command.private ?? false);
         const [resolvedArgs, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], message, interop, args));
 
@@ -202,12 +293,7 @@ export default class FluxClient<
         }
     }
 
-    private async postPreExecution<T extends CommandOption<OptionType>[]>({ command, args, interop }: {
-        command: Command<T>;
-        args: unknown[];
-        interop: Interop;
-        client: FluxClient;
-    }) {
+    private async postPreExecution<T extends CommandOption<OptionType>[]>({ command, args, interop }: MiddlewareContext) {
         try {
             await command.execute(this, interop, args as ExtractArgsFromOptions<T>);
         } catch (err) {
@@ -291,9 +377,11 @@ export default class FluxClient<
         const files = readdirSync(path);
 
         const commands = files
-            .map(e => require(`${path}/${e}`))
-            .map(e => e.default ?? e)
-            .filter(e => e instanceof Command);
+            .filter(e => lstatSync(`${path}/${e}`).isFile())
+            .filter(file => file.endsWith(".js"))
+            .map(file => require(`${path}/${file}`))
+            .map(module => module.default ?? module)
+            .filter(command => command instanceof Command);
 
         this.loadCommands(commands);
     }
