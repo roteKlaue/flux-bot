@@ -1,7 +1,7 @@
 {
   "name": "flux-bot",
   "description": "A Discord.js client extension for streamlined command handling, argument parsing, and interaction support.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
