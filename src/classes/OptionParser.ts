@@ -36,14 +36,14 @@ export default class OptionParser {
                 case "STRING":
                 case "NUMBER":
                 case "BOOLEAN":
-                    parsedValue = optionValue.value;
+                    parsedValue = (optionValue.value as any).value;
                     break;
                 case "USER":
-                    parsedValue = interaction.guild?.members.cache.get(optionValue.value.toString());
+                    parsedValue = interaction.guild?.members.cache.get((optionValue.value as any).value);
                     break;
                 case "TEXT_CHANNEL":
                 case "VOICE_CHANNEL":
-                    parsedValue = interaction.guild?.channels.cache.get(optionValue.value.toString());
+                    parsedValue = interaction.guild?.channels.cache.get((optionValue.value as any).value);
                     break;
                 default:
                     throw new ArgumentError(name, `Unsupported argument type: ${type}`);
