@@ -309,7 +309,7 @@ export default class FluxClient<
         const context = { command, args, interop, client: this, pluginArgs };
         
         try {
-            await this.executeMiddleware([...this.preExecutionMiddleware, this.postPreExecution], context);
+            await this.executeMiddleware([...this.preExecutionMiddleware, this.postPreExecution.bind(this)], context);
         } catch (err) {
             this.logger?.error('Pre-execution middleware error', { command: command.name, error: err });
             this.emit('middlewareError', { command, interop, error: err });
