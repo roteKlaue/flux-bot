@@ -99,7 +99,8 @@ export type CommandExecutor<T extends CommandOption<OptionType>[] = []> = (
     this: Command<T>,
     client: Client,
     interopt: Interop,
-    args: ExtractArgsFromOptions<T>) => PromiseOr<void>;
+    args: ExtractArgsFromOptions<T>,
+    pluginArgs?: Record<string, any>) => PromiseOr<void>;
 
 /**
  * Properties required to define a command.

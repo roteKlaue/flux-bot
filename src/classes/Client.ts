@@ -66,7 +66,7 @@ export default class FluxClient<
      * @param plugin - The plugin to register.
      * @returns True if the plugin was successfully registered, false if already registered.
      */
-    registerPlugin(plugin: Plugin): boolean {
+    public registerPlugin(plugin: Plugin): boolean {
         if (this.plugins.has(plugin.name)) {
             this.logger?.warn(`Plugin already registered: ${plugin.name}`);
             return false;
@@ -82,7 +82,7 @@ export default class FluxClient<
      * @param pluginName - The name of the plugin to unregister.
      * @returns True if the plugin was successfully unregistered, false if not found.
      */
-    unregisterPlugin(pluginName: string): boolean {
+    public unregisterPlugin(pluginName: string): boolean {
         if (!this.plugins.has(pluginName)) {
             this.logger?.warn(`Plugin not found: ${pluginName}`);
             return false;
@@ -98,7 +98,7 @@ export default class FluxClient<
      * @param pluginName - The name of the plugin.
      * @returns The plugin instance or undefined if not found.
      */
-    getPlugin(pluginName: string): Plugin | undefined {
+    public getPlugin(pluginName: string): Plugin | undefined {
         return this.plugins.get(pluginName);
     }
 
@@ -115,9 +115,8 @@ export default class FluxClient<
                     await plugin.onMenuInteraction(interaction);
                 } else if (interaction.isButton() && plugin.onButtonInteraction) {
                     await plugin.onButtonInteraction(interaction);
-                } else {
-                    await plugin.onInteraction?.(interaction);
                 }
+                await plugin.onInteraction?.(interaction);
             } catch (error) {
                 this.emit("pluginError", { plugin, error })
                 this.logger?.error(`Plugin failed to handle interaction: ${plugin.name}`, { error });
@@ -136,6 +135,17 @@ export default class FluxClient<
             } catch (error) {
                 this.emit("pluginError", { plugin, error })
                 this.logger?.error(`Plugin failed to handle message: ${plugin.name}`, { error });
+            }
+        }
+    }
+
+    private async handlePluginCommand(interop: Interop) {
+        for (const plugin of this.plugins.values()) {
+            try {
+                await plugin.onCommandCall?.(interop);
+            } catch (error) {
+                this.emit("pluginError", { plugin, error })
+                this.logger?.error(`Plugin failed to handle interop call: ${plugin.name}`, { error });
             }
         }
     }
@@ -219,7 +229,7 @@ export default class FluxClient<
             return;
         }
 
-        this.handlePluginMessage(message);
+        await this.handlePluginMessage(message);
 
         const interop = new Interop(message, command.private ?? false);
         const [resolvedArgs, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], message, interop, args));
@@ -281,9 +291,22 @@ export default class FluxClient<
             timeStamps.set(interop.user.id, current);
             setTimeout(() => timeStamps.delete(interop.user.id), cooldownTime);
         }
+        
+        let pluginArgs: Record<string, any> = {};
+        for (const plugin of this.plugins.values()) {
+            try {
+                const extraArgs = await plugin.provideCommandArguments?.(interop, command);
+                if (extraArgs) {
+                    pluginArgs[plugin.name] = extraArgs;
+                }
+            } catch (error) {
+                this.logger?.error(`Plugin failed to provide arguments: ${plugin.name}`, { error });
+                this.emit('pluginError', { plugin, error });
+            }
+        }
 
-        const context = { command, args, interop, client: this };
-
+        const context = { command, args, interop, client: this, pluginArgs };
+        
         try {
             await this.executeMiddleware([...this.preExecutionMiddleware, this.postPreExecution], context);
         } catch (err) {
@@ -293,9 +316,12 @@ export default class FluxClient<
         }
     }
 
-    private async postPreExecution<T extends CommandOption<OptionType>[]>({ command, args, interop }: MiddlewareContext) {
+    private async postPreExecution<T extends CommandOption<OptionType>[]>(context: MiddlewareContext & { pluginArgs?: Record<string, any> }) {
+        const { command, interop, args, pluginArgs } = context;
+        await this.handlePluginCommand(interop);
+
         try {
-            await command.execute(this, interop, args as ExtractArgsFromOptions<T>);
+            await command.execute(this, interop, args as ExtractArgsFromOptions<T>, pluginArgs);
         } catch (err) {
             this.logger?.error('Command execution error', {
                 commandName: command.name,
@@ -307,7 +333,7 @@ export default class FluxClient<
         }
 
         try {
-            await this.executeMiddleware(this.postExecutionMiddleware, { command, args, interop, client: this });
+            await this.executeMiddleware(this.postExecutionMiddleware, context);
         } catch (err) {
             this.logger?.error('Post-execution middleware error', { command: command.name, error: err });
             this.emit('middlewareError', { command, interop, error: err });

@@ -106,10 +106,6 @@ class CommandBuilder implements Builder<Command> {
             aliases: this.aliases,
             category: this.category,
             cooldown: this.cooldown,
-            private: this.private,
-            options: this.options,
-            permissions: this.permissions,
-            inDM: this.inDM,
             execute: this.execute,
         });
     }
@@ -161,7 +157,7 @@ class Command<T extends CommandOption<OptionType>[] = []> {
         this.aliases = props.aliases;
         this.category = props.category ?? "Miscellaneous";
         this.private = props.private;
-        this.options = this.validateOptions(props.options);
+        this.options = this.validateOptions(props.options ?? [] as unknown as T);
         this.permissions = props.permissions;
         this.execute = props.execute.bind(this);
         this.inDM = props.inDM ?? false;
