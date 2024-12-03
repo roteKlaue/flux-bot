@@ -107,6 +107,8 @@ class CommandBuilder implements Builder<Command> {
             category: this.category,
             cooldown: this.cooldown,
             execute: this.execute,
+            inDM: this.inDM,
+            private: this.private
         });
     }
 }

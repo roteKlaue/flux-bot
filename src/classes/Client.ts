@@ -59,12 +59,27 @@ export default class FluxClient<
         if (options.plugins) {
             this.pluginManager.loadPlugins(options.plugins);
         }
+
+        process.once('exit', () => this.pluginManager.unloadPlugins());
+        this.once("destroyed", () => this.pluginManager.unloadPlugins());
+    }
+
+    /**
+     * Gracefully destroys the client, ensuring all resources are cleaned up.
+     * Unloads all plugins and emits a "destroyed" event.
+     * @returns A promise that resolves when the client is fully destroyed.
+     */
+    public async destroy(): Promise<void> {
+        await super.destroy();
+        this.emit("destroyed");
     }
 
     /**
      * Registers a plugin with the client.
+     * Ensures that plugins with duplicate names are not registered twice.
+     * Logs the registration process for debugging.
      * @param plugin - The plugin to register.
-     * @returns True if the plugin was successfully registered, false if already registered.
+     * @returns True if the plugin was successfully registered, false if it was already registered.
      */
     public registerPlugin(plugin: Plugin): boolean {
         if (this.plugins.has(plugin.name)) {
@@ -78,9 +93,11 @@ export default class FluxClient<
     }
 
     /**
-     * Unregisters a plugin from the client.
+     * Unregisters a plugin by its name.
+     * Ensures the plugin is properly removed from the internal plugin collection.
+     * Logs the unregistration process for debugging.
      * @param pluginName - The name of the plugin to unregister.
-     * @returns True if the plugin was successfully unregistered, false if not found.
+     * @returns True if the plugin was successfully unregistered, false if it was not found.
      */
     public unregisterPlugin(pluginName: string): boolean {
         if (!this.plugins.has(pluginName)) {
@@ -94,51 +111,21 @@ export default class FluxClient<
     }
 
     /**
-     * Retrieves a plugin by name.
-     * @param pluginName - The name of the plugin.
-     * @returns The plugin instance or undefined if not found.
+     * Retrieves a plugin by its name.
+     * Used for accessing specific plugin functionality or properties.
+     * @param pluginName - The name of the plugin to retrieve.
+     * @returns The plugin instance if found, otherwise undefined.
      */
     public getPlugin(pluginName: string): Plugin | undefined {
         return this.plugins.get(pluginName);
     }
 
     /**
-     * Handles interactions and delegates to plugins with interaction-specific hooks.
-     * @param interaction - The interaction event.
+     * Invokes the `onCommandCall` method of all registered plugins for a given interaction.
+     * Handles errors from plugins gracefully and emits a "pluginError" event if an error occurs.
+     * Logs errors for debugging.
+     * @param interop - The interop object representing the interaction or message.
      */
-    private async handlePluginInteraction(interaction: Interaction) {
-        for (const plugin of this.plugins.values()) {
-            try {
-                if (interaction.isCommand() && plugin.onCommandInteraction) {
-                    await plugin.onCommandInteraction(interaction);
-                } else if (interaction.isAnySelectMenu() && plugin.onMenuInteraction) {
-                    await plugin.onMenuInteraction(interaction);
-                } else if (interaction.isButton() && plugin.onButtonInteraction) {
-                    await plugin.onButtonInteraction(interaction);
-                }
-                await plugin.onInteraction?.(interaction);
-            } catch (error) {
-                this.emit("pluginError", { plugin, error })
-                this.logger?.error(`Plugin failed to handle interaction: ${plugin.name}`, { error });
-            }
-        }
-    }
-
-    /**
-     * Handles incoming messages and delegates to plugins with `onMessage` hooks.
-     * @param message - The message event.
-     */
-    private async handlePluginMessage(message: Message) {
-        for (const plugin of this.plugins.values()) {
-            try {
-                await plugin.onMessage?.(message);
-            } catch (error) {
-                this.emit("pluginError", { plugin, error })
-                this.logger?.error(`Plugin failed to handle message: ${plugin.name}`, { error });
-            }
-        }
-    }
-
     private async handlePluginCommand(interop: Interop) {
         for (const plugin of this.plugins.values()) {
             try {
@@ -151,11 +138,27 @@ export default class FluxClient<
     }
 
     /**
+     * Allows plugins to override or extend the behavior of existing client methods.
+     * Replaces the specified method with a new implementation.
+     * Logs the extension process for debugging.
+     * @param methodName - The name of the method to extend.
+     * @param implementation - The new implementation for the method.
+     * @throws Error if the specified method does not exist on the client.
+     */
+    public extend(methodName: string, implementation: Function) {
+        if (typeof (this as any)[methodName] !== 'function') {
+            throw new Error(`Method ${methodName} does not exist on FluxClient.`);
+        }
+
+        (this as any)[methodName] = implementation.bind(this);
+        this.logger?.info(`Method ${methodName} has been extended by a plugin.`);
+    }
+
+    /**
      * Handles slash command interactions from Discord.
      * @param interaction - The Discord interaction to process.
      */
     private async handleInteraction(interaction: Interaction) {
-        await this.handlePluginInteraction(interaction);
         if (!interaction.isCommand()) return;
 
         const name = interaction.commandName;
@@ -228,8 +231,6 @@ export default class FluxClient<
             this.emit('invalidContext', { message, command });
             return;
         }
-
-        await this.handlePluginMessage(message);
 
         const interop = new Interop(message, command.private ?? false);
         const [resolvedArgs, error] = await PromiseUtil.handler(OptionParser.parseOptions(command.options ?? [], message, interop, args));
@@ -316,6 +317,11 @@ export default class FluxClient<
         }
     }
 
+    /**
+     * Executes the primary logic of a command after pre-execution middleware is complete.
+     * This includes invoking the command's `execute` method and handling plugins' `onCommandCall`.
+     * @param context - The execution context including the command, arguments, and interop object.
+     */
     private async postPreExecution<T extends CommandOption<OptionType>[]>(context: MiddlewareContext & { pluginArgs?: Record<string, any> }) {
         const { command, interop, args, pluginArgs } = context;
         await this.handlePluginCommand(interop);
@@ -341,10 +347,12 @@ export default class FluxClient<
     }
 
     /**
-     * Executes a list of middleware functions sequentially.
-     * @param middleware - The list of middleware functions to execute.
-     * @param context - The middleware context to pass.
-     * @returns Whether execution passed all middleware.
+     * Executes a sequence of middleware functions sequentially.
+     * Middleware functions can use the `next` function to pass control to the next middleware in the chain.
+     * @param middleware - An array of middleware functions to execute.
+     * @param context - The context object to pass to each middleware function.
+     * @returns A promise that resolves when all middleware has been executed.
+     * @throws Error if any middleware throws an error.
      */
     private async executeMiddleware(middleware: Middleware[], context: MiddlewareContext) {
         let index = -1;
@@ -364,7 +372,8 @@ export default class FluxClient<
     }
 
     /**
-     * Registers a pre-execution middleware function.
+     * Registers a middleware function to be executed before command execution.
+     * Middleware functions are called in the order they are registered.
      * @param middleware - The middleware function to register.
      */
     public registerPreExecutionMiddleware(middleware: Middleware): void {
@@ -372,7 +381,8 @@ export default class FluxClient<
     }
 
     /**
-     * Registers a post-execution middleware function.
+     * Registers a middleware function to be executed after command execution.
+     * Middleware functions are called in the order they are registered.
      * @param middleware - The middleware function to register.
      */
     public registerPostExecutionMiddleware(middleware: Middleware): void {
@@ -380,8 +390,9 @@ export default class FluxClient<
     }
 
     /**
-     * Dynamically loads commands into the client's command collection.
-     * @param commands - The commands to load.
+     * Loads a list of commands into the client's command collection.
+     * Ensures that commands with overlapping names or aliases are logged as warnings.
+     * @param commands - An array of command instances to load.
      */
     public loadCommands(commands: Command<any>[]) {
         commands.forEach((command) => {
@@ -396,8 +407,9 @@ export default class FluxClient<
     }
 
     /**
-     * Loads command files from a specified folder.
-     * @param path - The path to the folder containing command files.
+     * Dynamically loads command files from a specified folder and adds them to the client's command collection.
+     * Only JavaScript files (`.js`) that export a valid command instance are loaded.
+     * @param path - The folder path containing command files.
      */
     public loadCommandsFolder(path: string) {
         const files = readdirSync(path);
@@ -413,8 +425,9 @@ export default class FluxClient<
     }
 
     /**
-     * Reloads all commands and updates Discord with the latest slash command configurations.
-     * @returns The number of commands reloaded.
+     * Reloads all commands by updating the Discord API with the latest slash command configurations.
+     * This method is triggered when the client starts if `reloadCommandsOnStartUp` is enabled.
+     * @returns A promise that resolves to the number of commands successfully reloaded.
      */
     public async reloadCommands(): Promise<number> {
         if (!this.isReady()) {

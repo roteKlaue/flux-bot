@@ -1,6 +1,6 @@
 export class ArgumentError extends Error {
-    public argumentName: string;
-    public reason: string;
+    public readonly argumentName: string;
+    public readonly reason: string;
 
     constructor(argumentName: string, reason: string) {
         super(`Error with argument "${argumentName}": ${reason}`);
