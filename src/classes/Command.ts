@@ -108,7 +108,9 @@ class CommandBuilder implements Builder<Command> {
             cooldown: this.cooldown,
             execute: this.execute,
             inDM: this.inDM,
-            private: this.private
+            private: this.private,
+            options: this.options,
+            permissions: this.permissions
         });
     }
 }
@@ -248,9 +250,9 @@ class Command<T extends CommandOption<OptionType>[] = []> {
                 );
             }
 
-            if (option.choises) {
+            if (option.choices) {
                 if (["STRING", "INTEGER", "NUMBER"].includes(option.type)) {
-                    settings.addChoices(...option.choises);
+                    settings.addChoices(...option.choices);
                 } else {
                     throw new Error(`[Command Error] Choices are only valid for STRING, INTEGER, or NUMBER types. Command: ${this.name}, Option: ${option.name}`);
                 }

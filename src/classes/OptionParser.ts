@@ -1,10 +1,51 @@
+import { CommandInteraction, Message, TextChannel, VoiceBasedChannel } from "discord.js";
 import { ExtractArgsFromOptions, OptionTypeMapping } from "../types/CommandTypings";
-import { CommandInteraction, Message } from "discord.js";
 import { ArgumentError } from "./errors/ArgumentError";
 import { CommandOption, OptionType } from "./Command";
+import { PromiseOr, PromiseUtil } from "sussy-util";
 import Interop from "./Interop";
 
+type TypeParser = (arg: string, message: Message) => PromiseOr<OptionTypeMapping<OptionType>>;
+
 export default class OptionParser {
+    public static readonly optionTypeParsers = new Map<OptionType, TypeParser>([
+        ["STRING", arg => arg],
+        ["NUMBER", arg => {
+            const num = +arg;
+            if (isNaN(num)) throw new Error("Invalid number");
+            return num;
+        }],
+        ['INTEGER', arg => {
+            const int = parseInt(arg, 10);
+            if (isNaN(int)) throw new Error('Invalid integer');
+            return int;
+        },
+        ],
+        ['BOOLEAN', arg => {
+            if (arg.toLowerCase() === 'true') return true;
+            if (arg.toLowerCase() === 'false') return false;
+            throw new Error('Invalid boolean');
+        },
+        ],
+        ['TEXT_CHANNEL', (arg, message) => {
+            const channel = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
+            if (!channel) throw new Error("Channel not found.");
+            if (!channel.isTextBased()) throw new Error(`Provided channel is not a Text Channel.`);
+            return channel as TextChannel;
+        }],
+        ['VOICE_CHANNEL', (arg, message) => {
+            const channel = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
+            if (!channel) throw new Error("Channel not found.");
+            if (!channel.isTextBased()) throw new Error(`Provided channel is not a Voice Channel.`);
+            return channel as VoiceBasedChannel;
+        }],
+        ['USER', async (arg, message) => {
+            const value = await message.guild!.members.fetch(arg.replace(/[^0-9]/g, ""));
+            if (!value) throw new Error("User not found.");
+            return value;
+        }]
+    ]);
+
     /**
      * Extracts arguments from the options provided in a Discord command interaction.
      * @template T - The type of the command options.
@@ -82,10 +123,6 @@ export default class OptionParser {
             const option = options[i];
             const arg = args[0];
 
-            if (option.required && !arg) {
-                throw new ArgumentError(option.name, "Required argument is missing.");
-            }
-
             if (!arg && !option.required) {
                 const defaultValue = typeof option.defaultValue === "function"
                     ? option.defaultValue(interop)
@@ -94,67 +131,26 @@ export default class OptionParser {
                 continue;
             }
 
+            if (option.required && !arg) {
+                throw ArgumentError.missingArgument(option.name);
+            }
+
             if (option.type === 'STRING' && option.collect) {
                 const collected = args.join(" ");
 
                 if (collected.trim().length < 1 && option.required) {
-                    throw new Error(`Argument ${option.name} requires input.`);
+                    throw ArgumentError.missingArgument(option.name);
                 }
 
-                parsedArgs.push(collected);
+                parsedArgs.push(collected.trim());
                 break;
             }
 
-            let parsedValue;
-            switch (option.type) {
-                case "STRING":
-                    parsedValue = arg;
-                    break;
-                case "NUMBER":
-                    parsedValue = +arg;
-                    if (isNaN(parsedValue)) {
-                        throw new ArgumentError(option.name, "Invalid number.");
-                    }
-                    break;
-                case "INTEGER":
-                    parsedValue = parseInt(arg);
-                    if (isNaN(parsedValue)) {
-                        throw new ArgumentError(option.name, "Invalid number.");
-                    }
-                    break;
-                case "BOOLEAN":
-                    parsedValue = arg?.toLowerCase() === "true";
-                    if (!["true", "false"].includes(arg?.toLowerCase())) {
-                        throw new ArgumentError(option.name, "Invalid boolean value.");
-                    }
-                    break;
-                case "USER":
-                    try {
-                        parsedValue = await message.guild!.members.fetch(arg.replace(/[^0-9]/g, ""));
-                        if (!parsedValue) {
-                            throw new ArgumentError(option.name, "User not found.");
-                        }
-                    } catch {
-                        throw new ArgumentError(option.name, "User not found.");
-                    }
-                    break;
-                case "TEXT_CHANNEL":
-                case "VOICE_CHANNEL":
-                    const channel = message.guild!.channels.cache.get(arg.replace(/[^0-9]/g, ""));
-                    if (!channel) {
-                        throw new ArgumentError(option.name, "Channel not found.");
-                    }
-                    if (
-                        (option.type === "TEXT_CHANNEL" && !channel.isTextBased()) ||
-                        (option.type === "VOICE_CHANNEL" && !channel.isVoiceBased())
-                    ) {
-                        throw new ArgumentError(option.name, `Provided channel is not a ${option.type.toLowerCase().replace("_", " ")}.`);
-                    }
-                    parsedValue = channel;
-                    break;
-                default:
-                    throw new ArgumentError(option.name, `Unsupported argument type: ${option.type}`);
-            }
+            const parser = OptionParser.optionTypeParsers.get(option.type);
+            if (!parser) throw new ArgumentError(option.name, `Unsupported type: ${option.type}`);
+            const [parsedValue, error] = await PromiseUtil.handler(parser(arg, message));
+
+            if (error) throw new ArgumentError(option.name, error.message);
 
             if (option.validate) {
                 const isValid = option.validate(parsedValue as OptionTypeMapping<OptionType>, interop);
@@ -162,9 +158,6 @@ export default class OptionParser {
                     throw new ArgumentError(option.name, "Validation failed.");
                 }
             }
-
-            args.shift();
-            parsedArgs.push(parsedValue);
         }
 
         return parsedArgs as ExtractArgsFromOptions<T>;

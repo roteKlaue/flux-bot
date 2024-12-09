@@ -10,9 +10,11 @@ type MessagePayload = string | {
  * Interface for unified interaction handling between CommandInteraction and Message.
  */
 export interface IInterop<Private extends boolean = boolean> {
+    readonly base: CommandInteraction | Message;
     readonly member: GuildMember | undefined;
     readonly channel: Channel | null;
     readonly guild: Guild | null;
+    readonly isPrivate: Private;
     readonly createdAt: Date;
     readonly user: User;
 
@@ -42,7 +44,7 @@ export default class Interop<T extends boolean = boolean> implements IInterop {
      * @param isPrivate - Indicates whether this interaction is private.
      * @throws {TypeError} If the base is not a CommandInteraction or Message.
      */
-    public constructor(base: CommandInteraction | Message<boolean>, private readonly isPrivate: T) {
+    public constructor(public readonly base: CommandInteraction | Message, public readonly isPrivate: T) {
         if (!(base instanceof CommandInteraction || base instanceof Message)) {
             throw new TypeError("Interop expects CommandInteraction or Message as base.");
         }

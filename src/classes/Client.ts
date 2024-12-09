@@ -5,11 +5,11 @@ import { ArgumentError } from "./errors/ArgumentError";
 import { readdirSync, lstatSync } from "node:fs";
 import { Plugin } from "../types/FluxPlugin";
 import FluxLogger from "../types/FluxLogger";
+import PluginManager from "./PluginManager";
 import OptionParser from "./OptionParser";
 import { PromiseUtil } from "sussy-util";
 import Command from "./Command";
 import Interop from "./Interop";
-import PluginManager from "./PluginManager";
 
 type FluxClientOptions<T extends boolean = boolean> = ClientOptions & {
     allowTextCommands?: T;
@@ -17,7 +17,6 @@ type FluxClientOptions<T extends boolean = boolean> = ClientOptions & {
     logger?: FluxLogger;
     plugins?: Plugin[] | string;
 } & (T extends true ? { prefix: string } : { prefix?: never });
-
 
 /**
  * Custom Discord.js Client for handling commands and interactions.
@@ -191,7 +190,7 @@ export default class FluxClient<
             return;
         }
 
-        this.commandHandler(command, interop, args);
+        await this.commandHandler(command, interop, args);
     }
 
     /**
@@ -219,7 +218,7 @@ export default class FluxClient<
         if (!command) return;
 
         if (command.private) {
-            message.delete();
+            await message.delete();
         }
 
         if (!message.guild && command.inDM) {
@@ -246,7 +245,7 @@ export default class FluxClient<
             return;
         }
 
-        this.commandHandler(command, interop, resolvedArgs);
+        await this.commandHandler(command, interop, resolvedArgs);
     }
 
     /**

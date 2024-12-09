@@ -1,7 +1,8 @@
-import { readdirSync, lstatSync } from "node:fs";
+import { promises as fs } from "node:fs";
 import { Plugin } from "../types/FluxPlugin";
 import FluxClient from "./Client";
 import { join } from "node:path";
+import { PromiseUtil } from "sussy-util";
 
 export default class PluginManager {
     constructor(private readonly client: FluxClient) { }
@@ -20,9 +21,9 @@ export default class PluginManager {
             return;
         }
 
-        const files = readdirSync(plugins).filter(file => {
+        const files = await PromiseUtil.filter(await fs.readdir(plugins), async file => {
             const filePath = join(plugins, file);
-            return lstatSync(filePath).isFile() && file.endsWith(".js");
+            return (await fs.lstat(filePath)).isFile() && file.endsWith(".js");
         });
 
         for (const file of files) {
@@ -31,9 +32,10 @@ export default class PluginManager {
                 const importedModule = await import(modulePath);
 
                 const plugin: Plugin = importedModule.default || importedModule;
-                this.loadPlugin(plugin);
+                await this.loadPlugin(plugin);
             } catch (error) {
-                this.client.logger?.error(`Failed to load plugin: ${file}`, { error });
+                this.client.logger?.error(`Failed to load plugin: ${file}. Check plugin structure and export.`, { error });
+                this.client.emit("pluginLoadError", { error, file });
             }
         }
     }
@@ -71,6 +73,7 @@ export default class PluginManager {
             }
         } catch (error) {
             this.client.logger?.error(`Failed to initialize plugin: ${plugin.name}`, { error });
+            this.client.emit("pluginInitError", { plugin, error });
         }
     }
 

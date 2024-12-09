@@ -9,4 +9,8 @@ export class ArgumentError extends Error {
 
         Object.setPrototypeOf(this, ArgumentError.prototype);
     }
+
+    public static missingArgument(argName: string) {
+        return new ArgumentError(argName, "Argument is required but was not provided.");
+    }
 }
