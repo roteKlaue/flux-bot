@@ -1,10 +1,13 @@
-import { promises as fs } from "node:fs";
 import { Plugin } from "../types/FluxPlugin";
+import { PromiseUtil } from "sussy-util";
+import { promises as fs } from "node:fs";
+import { satisfies } from "semver";
 import FluxClient from "./Client";
 import { join } from "node:path";
-import { PromiseUtil } from "sussy-util";
 
 export default class PluginManager {
+    private loadedPlugins: Map<string, string> = new Map();
+
     constructor(private readonly client: FluxClient) { }
 
     /**
@@ -15,9 +18,7 @@ export default class PluginManager {
      */
     async loadPlugins(plugins: string | Plugin[]) {
         if (Array.isArray(plugins)) {
-            for (const plugin of plugins) {
-                await this.loadPlugin(plugin);
-            }
+            await this.resolveDependenciesAndLoad(plugins);
             return;
         }
 
@@ -26,17 +27,66 @@ export default class PluginManager {
             return (await fs.lstat(filePath)).isFile() && file.endsWith(".js");
         });
 
+        const loadedPlugins: Plugin[] = [];
         for (const file of files) {
             const modulePath = join(plugins, file);
             try {
                 const importedModule = await import(modulePath);
-
                 const plugin: Plugin = importedModule.default || importedModule;
-                await this.loadPlugin(plugin);
+                loadedPlugins.push(plugin);
             } catch (error) {
                 this.client.logger?.error(`Failed to load plugin: ${file}. Check plugin structure and export.`, { error });
                 this.client.emit("pluginLoadError", { error, file });
             }
+        }
+
+        await this.resolveDependenciesAndLoad(loadedPlugins);
+    }
+
+    /**
+     * Resolves dependencies and loads plugins in the correct order.
+     * @param plugins - Array of plugin objects.
+     */
+    private async resolveDependenciesAndLoad(plugins: Plugin[]) {
+        const dependencyGraph = new Map<string, string[]>();
+
+        for (const plugin of plugins) {
+            dependencyGraph.set(plugin.name, (plugin.dependencies || []).map(d => d.name));
+        }
+
+        let sortedPlugins: string[] = [];
+        try {
+            sortedPlugins = this.topologicalSort(dependencyGraph);
+        } catch (e) {
+            this.client.emit("pluginInitError", { error: e });
+            return;
+        }
+
+        const validPlugins: Plugin[] = plugins.filter(plugin => {
+            if (!plugin.dependencies) return true;
+
+            const missingDeps = plugin.dependencies.filter(dep => {
+                const loadedVersion = this.loadedPlugins.get(dep.name);
+                return !loadedVersion || !satisfies(loadedVersion, dep.version);
+            });
+
+            if (missingDeps.length > 0) {
+                this.client.logger?.error(`Plugin "${plugin.name}" cannot be loaded due to missing or incompatible dependencies: ${missingDeps.map(d => `"${d.name}"`).join(", ")}`);
+                this.client.emit("pluginInitError", {
+                    error: new Error(`Missing or incompatible dependencies for "${plugin.name}"`),
+                    plugin,
+                    dependencies: missingDeps
+                });
+                return false;
+            }
+
+            return true;
+        });
+
+        for (const pluginName of sortedPlugins) {
+            const plugin = validPlugins.find(p => p.name === pluginName);
+            if (!plugin) continue;
+            await this.loadPlugin(plugin);
         }
     }
 
@@ -71,10 +121,46 @@ export default class PluginManager {
                 plugin.postExecutionMiddleware.forEach(mw => this.client.registerPostExecutionMiddleware(mw));
                 this.client.logger?.info(`Registered ${plugin.postExecutionMiddleware.length} post-execution middleware from plugin: ${plugin.name}`);
             }
+
+            this.loadedPlugins.set(plugin.name, plugin.version);
         } catch (error) {
             this.client.logger?.error(`Failed to initialize plugin: ${plugin.name}`, { error });
             this.client.emit("pluginInitError", { plugin, error });
         }
+    }
+
+    /**
+     * Performs topological sorting to determine the correct load order for plugins.
+     * Detects circular dependencies and prevents infinite loops.
+     * @param graph - A map representing plugin dependencies.
+     * @returns An ordered list of plugin names.
+     * @throws Error if a circular dependency is detected.
+     */
+    private topologicalSort(graph: Map<string, string[]>): string[] {
+        const sorted: string[] = [];
+        const visited = new Set<string>();
+        const stack = new Set<string>();
+
+        const visit = (plugin: string) => {
+            if (stack.has(plugin)) {
+                throw new Error(`Circular dependency detected: ${[...stack, plugin].join(" → ")}`);
+            }
+            if (!visited.has(plugin)) {
+                stack.add(plugin);
+                for (const dep of graph.get(plugin) || []) {
+                    visit(dep);
+                }
+                stack.delete(plugin);
+                visited.add(plugin);
+                sorted.push(plugin);
+            }
+        };
+
+        for (const plugin of graph.keys()) {
+            visit(plugin);
+        }
+
+        return sorted;
     }
 
     /**

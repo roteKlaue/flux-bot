@@ -15,6 +15,9 @@ export interface Plugin {
      * Useful for managing plugin updates and compatibility.
      */
     version: string;
+
+    dependencies?: { name: string, version: string }[];
+
     /**
      * An optional array of commands provided by the plugin.
      * These commands are registered and made available within the client.

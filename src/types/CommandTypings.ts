@@ -8,6 +8,7 @@ import {
     SlashCommandStringOption,
     SlashCommandUserOption,
     TextChannel,
+    User,
     VoiceBasedChannel
 } from "discord.js";
 import Interop from "../classes/Interop";
@@ -111,8 +112,9 @@ export type CommandProps<T extends CommandOption<OptionType>[] = []> = {
     description: string;
     aliases?: string[];
     category?: string;
-    cooldown?: number;
+    cooldown?: number | ((user: User) => number);
     private?: boolean;
+    usage?: string;
     options?: T;
     permissions?: PermissionResolvable[];
     execute: CommandExecutor<T>;

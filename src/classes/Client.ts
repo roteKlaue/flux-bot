@@ -273,7 +273,9 @@ export default class FluxClient<
             const current = Date.now();
             const timeStamps = this.cooldowns.get(command.name)
                 || this.cooldowns.set(command.name, new Collection()).get(command.name)!!;
-            const cooldownTime = (command.cooldown) * 1000;
+            const cooldown = typeof command.cooldown !== "function" ? command.cooldown
+                : command.cooldown(interop.user);
+            const cooldownTime = cooldown * 1000;
 
             const lastuse = timeStamps.get(interop.user.id);
             if (lastuse && current < lastuse + cooldownTime) {
@@ -291,7 +293,7 @@ export default class FluxClient<
             timeStamps.set(interop.user.id, current);
             setTimeout(() => timeStamps.delete(interop.user.id), cooldownTime);
         }
-        
+
         let pluginArgs: Record<string, any> = {};
         for (const plugin of this.plugins.values()) {
             try {
@@ -306,8 +308,9 @@ export default class FluxClient<
         }
 
         const context = { command, args, interop, client: this, pluginArgs };
-        
+
         try {
+            this.logger?.debug?.(`[Middlware Execution] ${command.name} by ${interop.user.tag} in ${interop.guild?.name || "DM"}`);
             await this.executeMiddleware([...this.preExecutionMiddleware, this.postPreExecution.bind(this)], context);
         } catch (err) {
             this.logger?.error('Pre-execution middleware error', { command: command.name, error: err });
@@ -325,7 +328,9 @@ export default class FluxClient<
         const { command, interop, args, pluginArgs } = context;
         await this.handlePluginCommand(interop);
 
+        const startTime = Date.now();
         try {
+            this.logger?.debug?.(`[Command Execution] ${command.name} by ${interop.user.tag} in ${interop.guild?.name || "DM"}`);
             await command.execute(this, interop, args as ExtractArgsFromOptions<T>, pluginArgs);
         } catch (err) {
             this.logger?.error('Command execution error', {
@@ -335,6 +340,9 @@ export default class FluxClient<
                 error: err,
             });
             this.emit('commandExecutionError', { command, interop, error: err });
+        } finally {
+            const executionTime = Date.now() - startTime;
+            this.logger?.debug?.(`[Command Finished] ${command.name} executed in ${executionTime}ms`);
         }
 
         try {

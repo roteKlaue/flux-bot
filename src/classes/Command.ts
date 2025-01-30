@@ -1,4 +1,4 @@
-import { ChannelType, InteractionContextType, PermissionResolvable, SlashCommandBuilder, SlashCommandChannelOption } from "discord.js";
+import { ChannelType, EmbedBuilder, InteractionContextType, PermissionResolvable, PermissionsBitField, SlashCommandBuilder, SlashCommandChannelOption, User } from "discord.js";
 import { CommandExecutor, CommandOption, CommandProps, OptionType } from "../types/CommandTypings";
 import { Builder } from "sussy-util";
 
@@ -136,7 +136,8 @@ class Command<T extends CommandOption<OptionType>[] = []> {
     public readonly description: string;
     public readonly aliases?: string[];
     public readonly category: string;
-    public readonly cooldown?: number;
+    public readonly usage?: string;
+    public readonly cooldown?: number | ((user: User) => number);
     public readonly private?: boolean;
     public readonly options?: CommandOption<OptionType>[];
     public readonly permissions?: PermissionResolvable[];
@@ -165,6 +166,7 @@ class Command<T extends CommandOption<OptionType>[] = []> {
         this.permissions = props.permissions;
         this.execute = props.execute.bind(this);
         this.inDM = props.inDM ?? false;
+        this.usage = props.usage;
 
         this.configureSlashCommand(props);
     }
@@ -260,6 +262,46 @@ class Command<T extends CommandOption<OptionType>[] = []> {
 
             return settings;
         });
+    }
+
+    private static generateExampleUsage(command: Command): string {
+        return `/${command.name} ${command.options?.map(option => {
+            const value = option.choices?.[0]?.value ?? `example-${option.name}`;
+            return option.required ? `<${option.name}: ${value}>` : `[${option.name}: ${value}]`;
+        }).join(" ") || ""}`;
+    }
+    
+
+    private static handleOption = (option: CommandOption<OptionType>): string => {
+        if (option.required) return `{${option.name}: ${option.choices ? option.choices.join(" | ") : option.type}}`;
+        return `[${option.name}: ${option.type}]`;
+    }
+
+    private static getPropertyName = <T extends Record<string, unknown>>(obj: T, value: unknown): keyof T | null => {
+        for (const [key, val] of Object.entries(obj)) {
+            if (val === value) {
+                return key as keyof T;
+            }
+        }
+        return null;
+    };
+
+    public getHelp(embed?: boolean) {
+        const usageString = `/${this.name} ${this.options?.map(Command.handleOption).join(" ") || ""}`;
+
+        if (embed) {
+            return new EmbedBuilder()
+                .setTitle(`Help: /${this.name}`)
+                .setDescription(this.description || "No description available")
+                .addFields([
+                    { name: "Usage", value: usageString, inline: true },
+                    { name: "Aliases", value: this.aliases?.join(", ") || "None", inline: true },
+                    { name: "Cooldown", value: this.cooldown ? `${this.cooldown} seconds` : "None", inline: true },
+                    { name: "Required Permissions", value: this.permissions?.map(perm => `\`${Command.getPropertyName(PermissionsBitField.Flags, perm)}\``).join(", ") || "None", inline: false },
+                ])
+                .setColor(0x7289DA);
+        }
+        return `**/${this.name}** - ${this.description}\n**Usage:** ${usageString}\n**Cooldown:** ${this.cooldown || "None"}\n**Permissions:** ${this.permissions?.join(", ") || "None"}`;
     }
 
     /**
