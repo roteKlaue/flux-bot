@@ -160,9 +160,7 @@ export default class FluxClient<
     private async handleInteraction(interaction: Interaction) {
         if (!interaction.isCommand()) return;
 
-        const name = interaction.commandName;
-        const command = this.commands.get(name);
-
+        const command = this.getCommand(interaction.commandName);
         if (!command) {
             this.logger?.warn('Unknown command attempted', {
                 commandName: name,
@@ -181,7 +179,7 @@ export default class FluxClient<
 
         if (error || !args) {
             this.logger?.info('Invalid arguments given for interaction', {
-                commandName: name,
+                commandName: interaction.commandName,
                 userId: interaction.user.id,
                 error,
             });
@@ -212,9 +210,7 @@ export default class FluxClient<
 
         if (!commandName) return;
 
-        const command = this.commands.get(commandName)
-            || this.commands.find(cmd => cmd.aliases?.includes(commandName));
-
+        const command = this.getCommand(commandName);
         if (!command) return;
 
         if (command.private) {
@@ -260,7 +256,7 @@ export default class FluxClient<
         args: ExtractArgsFromOptions<T>
     ) {
         if (command.permissions && !interop.member?.permissions.has(command.permissions)) {
-            this.logger?.warn('Permission denied', {
+            this.logger?.debug?.('Permission denied', {
                 commandName: command.name,
                 userId: interop.user.id,
                 guildId: interop.guild?.id,
@@ -273,8 +269,9 @@ export default class FluxClient<
             const current = Date.now();
             const timeStamps = this.cooldowns.get(command.name)
                 || this.cooldowns.set(command.name, new Collection()).get(command.name)!!;
-            const cooldown = typeof command.cooldown !== "function" ? command.cooldown
-                : command.cooldown(interop.user);
+            const cooldown = typeof command.cooldown !== "function"
+                ? command.cooldown
+                : command.cooldown(interop);
             const cooldownTime = cooldown * 1000;
 
             const lastuse = timeStamps.get(interop.user.id);
@@ -319,6 +316,15 @@ export default class FluxClient<
         }
     }
 
+    private getCommand(name: string) {
+        return this.commands.get(name) || this.commands.find(cmd => cmd.aliases?.includes(name));
+    }
+
+    private handleError(err: Error, command: Command, interop: Interop) {
+        this.logger?.error(`[Command Execution Error] ${command.name}`, { error: err.message });
+        this.emit("commandExecutionError", { command, interop, error: err });
+    }
+
     /**
      * Executes the primary logic of a command after pre-execution middleware is complete.
      * This includes invoking the command's `execute` method and handling plugins' `onCommandCall`.
@@ -333,13 +339,7 @@ export default class FluxClient<
             this.logger?.debug?.(`[Command Execution] ${command.name} by ${interop.user.tag} in ${interop.guild?.name || "DM"}`);
             await command.execute(this, interop, args as ExtractArgsFromOptions<T>, pluginArgs);
         } catch (err) {
-            this.logger?.error('Command execution error', {
-                commandName: command.name,
-                userId: interop.user.id,
-                guildId: interop.guild?.id,
-                error: err,
-            });
-            this.emit('commandExecutionError', { command, interop, error: err });
+            this.handleError(err as Error, command, interop);
         } finally {
             const executionTime = Date.now() - startTime;
             this.logger?.debug?.(`[Command Finished] ${command.name} executed in ${executionTime}ms`);

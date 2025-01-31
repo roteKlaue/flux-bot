@@ -1,6 +1,7 @@
-import { ChannelType, EmbedBuilder, InteractionContextType, PermissionResolvable, PermissionsBitField, SlashCommandBuilder, SlashCommandChannelOption, User } from "discord.js";
+import { ChannelType, EmbedBuilder, InteractionContextType, PermissionResolvable, PermissionsBitField, SlashCommandBuilder, SlashCommandChannelOption } from "discord.js";
 import { CommandExecutor, CommandOption, CommandProps, OptionType } from "../types/CommandTypings";
 import { Builder } from "sussy-util";
+import Interop from "./Interop";
 
 class CommandBuilder implements Builder<Command> {
     private name?: string;
@@ -137,7 +138,7 @@ class Command<T extends CommandOption<OptionType>[] = []> {
     public readonly aliases?: string[];
     public readonly category: string;
     public readonly usage?: string;
-    public readonly cooldown?: number | ((user: User) => number);
+    public readonly cooldown?: number | ((interop: Interop) => number);
     public readonly private?: boolean;
     public readonly options?: CommandOption<OptionType>[];
     public readonly permissions?: PermissionResolvable[];

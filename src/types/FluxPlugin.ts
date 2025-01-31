@@ -4,6 +4,9 @@ import Interop from "../classes/Interop";
 import Command from "../classes/Command";
 import { PromiseOr } from "sussy-util";
 
+/**
+ * Interface defining the structure of a plugin for FluxClient.
+ */
 export interface Plugin {
     /**
      * The unique name of the plugin.
@@ -16,6 +19,10 @@ export interface Plugin {
      */
     version: string;
 
+    /**
+     * Optional dependencies that this plugin requires.
+     * Used for ensuring compatibility with other plugins.
+     */
     dependencies?: { name: string, version: string }[];
 
     /**

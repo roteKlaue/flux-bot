@@ -112,7 +112,7 @@ export type CommandProps<T extends CommandOption<OptionType>[] = []> = {
     description: string;
     aliases?: string[];
     category?: string;
-    cooldown?: number | ((user: User) => number);
+    cooldown?: number | ((interop: Interop) => number);
     private?: boolean;
     usage?: string;
     options?: T;
